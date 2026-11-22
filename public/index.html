@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en-NZ">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Class Portfolio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="icon" href="/assets/art/favicon.png"><link rel="apple-touch-icon" href="/assets/art/icon-192.png">
+<link rel="stylesheet" href="/assets/style.css">
+<link rel="stylesheet" href="/assets/theme-bold.css">
+<script src="/assets/config.js"></script>
+<script src="/assets/qrcode.js"></script>
+<script src="/assets/common.js"></script>
+</head>
+<body>
+<header class="top"><div class="in">
+  <a class="brand" href="/"><span class="logo" id="logo"></span><span><b id="bn">Class Portfolio</b><small id="bs"></small></span></a>
+</div></header>
+
+<main class="wrap">
+  <section class="hero">
+    <div>
+      <img class="biglogo" src="/assets/art/logo.png" alt="Portfolio – student portfolio and school hub">
+      <h1>Every piece of learning, kept safe in one place.</h1>
+      <p class="lead">Students save their best work straight from the apps they use in class. Teachers see it all by subject, and families get their own private link.</p>
+    </div>
+    <div class="card" id="login">
+      <div class="tabs" style="margin-top:0" role="tablist">
+        <button class="tab" role="tab" id="tS" aria-selected="true">Student</button>
+        <button class="tab" role="tab" id="tT" aria-selected="false">Teacher</button>
+      </div>
+      <form id="fS">
+        <label for="code">Your personal code</label>
+        <input id="code" class="code-in" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="7" placeholder="ABC-123" aria-describedby="hS">
+        <p class="small mute" id="hS">It's on the card your teacher gave you.</p>
+        <p class="small" id="eS" role="alert" style="color:#c2321f;font-weight:700"></p>
+        <button class="btn pri" style="width:100%">Open my portfolio</button>
+      </form>
+      <form id="fT" class="hide">
+        <label for="pw">Teacher password</label>
+        <input id="pw" type="password" autocomplete="current-password">
+        <p class="small" id="eT" role="alert" style="color:#c2321f;font-weight:700"></p>
+        <button class="btn pri" style="width:100%">Sign in</button>
+      </form>
+    </div>
+  </section>
+
+  <section class="feat">
+    <div class="card"><div class="ico" style="--c:var(--blu)" id="i1"></div><h3>Save from any app</h3><p>One tap in a classroom app sends a drawing, video, recording or test result to the right subject folder.</p></div>
+    <div class="card"><div class="ico" style="--c:var(--grn)" id="i2"></div><h3>Organised by subject</h3><p>Maths, Reading, Writing and Topic — every child has their own portfolio, ready for conferences and reports.</p></div>
+    <div class="card"><div class="ico" style="--c:var(--pink)" id="i3"></div><h3>Private for families</h3><p>Parents scan a personal QR code and see their own child's work only. Nothing else, and no account needed.</p></div>
+  </section>
+</main>
+<div class="foot">Looking for your child's portfolio? Scan the QR code your teacher sent home.</div>
+
+<script>
+const { $, svg, CFG, api, store } = CP;
+$('#logo').innerHTML = svg('logo');
+$('#bn').textContent = CFG.className + ' Portfolio';
+$('#bs').textContent = [CFG.schoolName, CFG.year].filter(Boolean).join(' · ');
+document.title = CFG.className + ' Portfolio';
+$('#i1').innerHTML = svg('cloud'); $('#i2').innerHTML = svg('logo'); $('#i3').innerHTML = svg('shield');
+
+function pick(t) {
+  $('#tS').setAttribute('aria-selected', t === 'S'); $('#tT').setAttribute('aria-selected', t === 'T');
+  $('#fS').classList.toggle('hide', t !== 'S'); $('#fT').classList.toggle('hide', t !== 'T');
+  (t === 'S' ? $('#code') : $('#pw')).focus();
+}
+$('#tS').onclick = () => pick('S'); $('#tT').onclick = () => pick('T');
+
+// already signed in? skip ahead (add #switch to the address to stay here)
+if (location.hash !== '#switch') {
+  if (store.get('cp_t')) api('whoami', { token: store.get('cp_t') }).then(() => (location.href = '/teacher')).catch(() => store.del('cp_t'));
+  else if (store.get('cp_s')) api('whoami', { token: store.get('cp_s') }).then(() => (location.href = '/me')).catch(() => store.del('cp_s'));
+}
+
+$('#code').addEventListener('input', (e) => {
+  const v = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+  e.target.value = v.length > 3 ? v.slice(0, 3) + '-' + v.slice(3) : v;
+});
+$('#fS').onsubmit = async (e) => {
+  e.preventDefault(); $('#eS').textContent = '';
+  try { const d = await api('auth/student', { method: 'POST', body: { code: $('#code').value } }); store.set('cp_s', d.token); location.href = '/me'; }
+  catch (x) { $('#eS').textContent = x.message; }
+};
+$('#fT').onsubmit = async (e) => {
+  e.preventDefault(); $('#eT').textContent = '';
+  try { const d = await api('auth/teacher', { method: 'POST', body: { password: $('#pw').value } }); store.set('cp_t', d.token); location.href = '/teacher'; }
+  catch (x) { $('#eT').textContent = x.message; }
+};
+</script>
+</body>
+</html>

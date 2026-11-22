@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en-NZ">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Learning portfolio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="icon" href="/assets/art/favicon.png"><link rel="apple-touch-icon" href="/assets/art/icon-192.png">
+<link rel="stylesheet" href="/assets/style.css">
+<link rel="stylesheet" href="/assets/theme-bold.css">
+<script src="/assets/config.js"></script>
+<script src="/assets/curriculum.js"></script>
+<script src="/assets/qrcode.js"></script>
+<script src="/assets/common.js"></script>
+<script src="/assets/progress.js"></script>
+<script src="/assets/dashboard.js"></script>
+</head>
+<body class="dashpage">
+<main id="pf"></main>
+<div class="foot"><span id="ft"></span></div>
+<script>
+const { $, svg, CFG, api, renderPortfolio, firstName, avColor, initials, esc } = CP;
+const t = decodeURIComponent(location.hash.slice(1));
+if (!t) $('#pf').innerHTML = '<div class="card dempty" style="max-width:640px;margin:40px auto;padding:24px"><img src="/assets/art/empty-family.png" alt=""><div><h3>Scan your child’s QR code</h3><p>Use your phone camera on the card your child’s teacher sent home.</p></div></div>';
+else api('family', { headers: { 'X-Family-Token': t } }).then((d) => {
+  const n = firstName(d.student.name);
+  document.title = n + '’s learning portfolio';
+  CP.dashboard($('#pf'), d, { who: 'family', pfOpts: { emptyText: n + '’s teacher will share work here as it is completed.' } });
+  $('#ft').innerHTML = 'This page is private to your family. Please don’t share the link or post images of other children.';
+}).catch((e) => { $('#pf').innerHTML = `<div class="empty"><h3>Link not available</h3><p>${esc(e.message)}</p></div>`; });
+</script>
+</body>
+</html>

@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en-NZ">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Teacher hub</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="icon" href="/assets/art/favicon.png"><link rel="apple-touch-icon" href="/assets/art/icon-192.png">
+<link rel="stylesheet" href="/assets/style.css">
+<link rel="stylesheet" href="/assets/theme-bold.css">
+<script src="/assets/config.js"></script>
+<script src="/assets/curriculum.js"></script>
+<script src="/assets/qrcode.js"></script>
+<script src="/assets/common.js"></script>
+<script src="/assets/progress.js"></script>
+</head>
+<body>
+<header class="top"><div class="in">
+  <a class="brand" href="#/"><span class="logo" id="logo"></span><span><b id="bn"></b><small id="bs"></small></span></a>
+  <nav class="nav" aria-label="Main">
+    <a href="#/" data-r="home" id="n1"></a><a href="#/progress" data-r="progress" id="n5"></a><a href="#/roster" data-r="roster" id="n2"></a><a href="#/print" data-r="print" id="n3"></a><a href="#/apps" data-r="apps" id="n4"></a><a href="#/class" data-r="class" id="n6"></a>
+    <button id="out"></button>
+  </nav>
+</div></header>
+<div id="banner"></div>
+<main class="wrap" id="app"><p class="mute">Loading…</p></main>
+
+<script>
+const { $, $$, svg, esc, CFG, api, store, toast, copy, ago, fmtDate, avColor, initials, fmtCode, firstName, workCard, qrSvg } = CP;
+const token = () => store.get('cp_t');
+if (!token()) location.replace('/');
+const ORIGIN = location.origin;
+const famUrl = (s) => `${ORIGIN}/family#${s.familyToken}`;
+let students = [], recent = [], cls = { closed: false };
+
+$('#logo').innerHTML = svg('logo');
+$('#bn').textContent = CFG.className + ' Portfolio';
+$('#bs').textContent = 'Teacher hub';
+document.title = CFG.className + ' · Teacher hub';
+$('#n1').innerHTML = svg('home') + 'Class'; $('#n5').innerHTML = svg('result') + 'Progress'; $('#n2').innerHTML = svg('users') + 'Roster'; $('#n3').innerHTML = svg('qr') + 'Print'; $('#n4').innerHTML = svg('plug') + 'Connect apps'; $('#n6').innerHTML = svg('key') + 'Close class';
+$('#out').innerHTML = svg('out') + 'Sign out';
+$('#out').onclick = () => { store.del('cp_t'); location.href = '/'; };
+
+async function call(path, o = {}) {
+  try { return await api(path, Object.assign({ token: token() }, o)); }
+  catch (e) { if (e.status === 401) { store.del('cp_t'); location.href = '/'; } throw e; }
+}
+async function loadStudents() { students = (await call('students')).students; }
+
+const app = $('#app');
+function setNav(r) { $$('.nav a').forEach((a) => a.classList.toggle('on', a.dataset.r === r)); }
+function err(e) { app.innerHTML = `<div class="empty"><h3>Something went wrong</h3><p>${esc(e.message)}</p></div>`; }
+
+async function route() {
+  const h = location.hash.replace(/^#\/?/, '').split('/');
+  window.scrollTo(0, 0);
+  try {
+    cls = (await call('class')).class;
+    $('#banner').innerHTML = cls.closed ? `<div class="banner">This class is <b>closed</b>. Students can't sign in or save work.${cls.familyUntil ? ' Families can view and download until ' + fmtDate(cls.familyUntil) + '.' : ''} <a href="#/class">Manage</a></div>` : '';
+    if (h[0] === 's' && h[1]) { setNav('home'); await studentView(h[1], h[2]); }
+    else if (h[0] === 'roster') { setNav('roster'); await rosterView(); }
+    else if (h[0] === 'progress') { setNav('progress'); await progressOverview(); }
+    else if (h[0] === 'print') { setNav('print'); await printView(h[1]); }
+    else if (h[0] === 'apps') { setNav('apps'); appsView(); }
+    else if (h[0] === 'class') { setNav('class'); await classView(); }
+    else { setNav('home'); await homeView(); }
+  } catch (e) { err(e); }
+}
+addEventListener('hashchange', route);
+
+/* ---------------- home ---------------- */
+async function homeView() {
+  const [, r] = await Promise.all([loadStudents(), call('recent')]);
+  recent = r.items;
+  const total = students.reduce((a, s) => a + s.total, 0);
+  const active = students.filter((s) => s.total > 0).length;
+  const inbox = students.reduce((a, s) => a + (s.counts.Inbox || 0), 0);
+  if (!students.length) {
+    app.innerHTML = `<div class="empty"><h3>Welcome! Let's add your class.</h3><p>Paste your students' names on the Roster page — the app creates their personal codes and family QR codes for you.</p><p><a class="btn pri" href="#/roster">${svg('users')} Add students</a></p></div>`;
+    return;
+  }
+  app.innerHTML = `
+    <div class="row" style="margin-bottom:14px"><h2 class="grow" style="margin:0">${esc(CFG.className)}</h2><input type="search" id="q" placeholder="Find a student…" style="max-width:240px" aria-label="Find a student"></div>
+    <div class="stats">
+      <div class="card stat"><b>${students.length}</b><span>Students</span></div>
+      <div class="card stat"><b>${total}</b><span>Pieces of work</span></div>
+      <div class="card stat"><b>${active}</b><span>Students with work</span></div>
+      <div class="card stat"><b>${inbox}</b><span>Unsorted in Inbox</span></div>
+    </div>
+    <div class="grid c3" id="stu"></div>
+    <h2 style="margin-top:34px">Recently saved</h2>
+    <div class="grid c4" id="rec"></div>`;
+  const draw = (f) => {
+    const box = $('#stu'); box.innerHTML = '';
+    students.filter((s) => s.name.toLowerCase().includes(f)).forEach((s) => {
+      const b = document.createElement('button'); b.className = 'stu';
+      b.innerHTML = `<div class="row" style="flex-wrap:nowrap"><span class="avatar" style="--c:${avColor(s.id)}">${esc(initials(s.name))}</span><div><div class="nm">${esc(s.name)}</div><div class="small mute">${ago(s.last)}</div></div></div>
+        <div class="pills">${CFG.subjects.map((x) => `<span class="pill s-${x}">${x} ${s.counts[x] || 0}</span>`).join('')}${s.counts.Inbox ? `<span class="pill s-Inbox">Inbox ${s.counts.Inbox}</span>` : ''}</div>`;
+      b.onclick = () => (location.hash = '#/s/' + s.id);
+      box.appendChild(b);
+    });
+  };
+  draw(''); $('#q').oninput = (e) => draw(e.target.value.toLowerCase());
+  const rec = $('#rec');
+  if (!recent.length) rec.innerHTML = '<div class="empty" style="grid-column:1/-1"><p>Nothing has been saved yet. Open one of your apps, tap “Save to portfolio”, and it will show up here.</p></div>';
+  recent.slice(0, 8).forEach((it) => rec.appendChild(workCard(it, { teacher: true, student: true, token, onChange: route })));
+}
+
+/* ---------------- one student ---------------- */
+async function studentView(id, tab) {
+  const d = await call(`students/${id}/items`);
+  const s = d.student, items = d.items;
+  items.forEach((i) => (i.studentName = s.name));
+  const head = `<a href="#/" class="btn sm">${svg('back')} Class</a>
+    <div class="row" style="margin:16px 0 8px"><span class="avatar" style="--c:${avColor(s.id)};width:62px;height:62px;font-size:2rem">${esc(initials(s.name))}</span>
+      <div class="grow"><h2 style="margin:0">${esc(s.name)}</h2><div class="small mute">Student code <code class="k">${fmtCode(s.code)}</code> · ${items.length} pieces of work</div></div>
+      <button class="btn" id="fq">${svg('qr')} Family QR</button><button class="btn" id="fl">${svg('copy')} Copy family link</button><button class="btn" id="zp">${svg('dl')} Download portfolio</button></div>
+    <div class="mini-tabs"><a href="#/s/${s.id}" class="${tab === 'progress' ? '' : 'on'}">Work</a><a href="#/s/${s.id}/progress" class="${tab === 'progress' ? 'on' : ''}">Progress &amp; summary</a></div>`;
+  app.innerHTML = head + '<div id="body" class="gap"></div>';
+  $('#fl').onclick = () => copy(famUrl(s), 'Family link copied');
+  $('#fq').onclick = () => qrModal(s);
+  CP.downloadButton($('#zp'), () => ({ student: s, items, reports: reportsCache(s.id), checks: checksCache(s.id), showChecks: true }));
+  if (tab === 'progress') return progressTab(s, items, $('#body'));
+  const pr = await call(`students/${s.id}/progress`).catch(() => null);
+  if (pr) _pc[s.id] = { checks: pr.checks, reports: pr.reports };
+  workTab(s, items, $('#body'), tab);
+}
+let _pc = {};
+const reportsCache = (id) => (_pc[id] && _pc[id].reports) || [];
+const checksCache = (id) => (_pc[id] && _pc[id].checks) || {};
+
+function workTab(s, items, box, tab) {
+  const subs = CFG.subjects.concat(items.some((i) => i.subject === 'Inbox') ? ['Inbox'] : []);
+  let cur = subs.includes(tab) ? tab : subs[0];
+  const draw = () => {
+    box.innerHTML = `<div class="row"><div class="tabs grow" role="tablist" style="margin:0">${subs.map((x) => `<button class="tab s-${x}" role="tab" aria-selected="${x === cur}" data-s="${x}">${x}<span class="n">${items.filter((i) => i.subject === x).length}</span></button>`).join('')}</div>
+      <label class="btn pri" style="margin:0">${svg('plus')} Add work<input type="file" id="add" multiple hidden accept="image/*,video/*,audio/*,application/pdf,text/plain"></label></div><div id="pf" style="margin-top:16px"></div>`;
+    $$('.tab', box).forEach((b) => (b.onclick = () => { cur = b.dataset.s; draw(); }));
+    const pf = $('#pf', box); const list = items.filter((i) => i.subject === cur);
+    if (!list.length) pf.innerHTML = `<div class="empty"><h3>No ${esc(cur)} work yet</h3><p>Work saved from your apps will appear here. You can also add a photo or video yourself with “Add work”.</p></div>`;
+    else { pf.className = 'grid c3'; list.forEach((it) => pf.appendChild(workCard(it, { teacher: true, studentName: s.name, token, onChange: (n, old) => { if (!n) items.splice(items.indexOf(old), 1); route(); } }))); }
+    $('#add', box).onchange = async (e) => {
+      const files = [...e.target.files]; let ok = 0;
+      for (const f of files) {
+        try {
+          await fetch(`/api/upload?student=${s.id}&subject=${cur === 'Inbox' ? '' : cur}&title=${encodeURIComponent(f.name.replace(/\.[^.]+$/, ''))}`, { method: 'POST', headers: { Authorization: 'Bearer ' + token(), 'Content-Type': f.type || 'application/octet-stream', 'X-Filename': encodeURIComponent(f.name) }, body: f })
+            .then(async (r) => { if (!r.ok) throw new Error((await r.json()).error); }); ok++;
+        } catch (x) { toast(f.name + ': ' + x.message, 4000); }
+      }
+      if (ok) { toast(ok + ' added'); route(); }
+    };
+  };
+  draw();
+}
+
+/* ---------------- progress tab ---------------- */
+async function progressTab(s, items, box) {
+  const pr = await call(`students/${s.id}/progress`);
+  const checks = pr.checks; let reports = pr.reports;
+  _pc[s.id] = { checks, reports };
+  const nm = firstName(s.name);
+  const score = (r) => `${r.meta.score}/${r.meta.total}`;
+  const draw = () => {
+    const y = CP.yearOf(s);
+    box.innerHTML = `
+      <div class="card"><div class="row"><div class="grow"><h3 style="margin:0">Analyse ${esc(nm)}'s work with Claude</h3><p class="mute small" style="margin:4px 0 0">Get marking, a curriculum progress summary, areas to improve, next steps and activities for home. The prompt is anonymised — the name is replaced with [Name].</p></div>
+        <button class="btn pri" id="cl1">${svg('result')} Analyse with Claude</button><button class="btn" id="cl2">Paste Claude's reply</button></div></div>
+
+      <div class="row gap"><h3 class="grow" style="margin:0">Where ${esc(nm)} is at</h3><label class="row small" style="margin:0;font-weight:700">Year level <select id="yr" style="width:auto"><option value="">—</option>${[4, 5, 6].map((v) => `<option ${v === s.year ? 'selected' : ''}>${v}</option>`).join('')}</select></label></div>
+      <div class="grid c2" style="margin-top:10px">${CFG.subjects.map((sub) => { const p = CP.progressFor(checks, sub, y), a = CP.attOf(checks, sub), its = items.filter((i) => i.subject === sub), res = CP.resultsOf(its).slice(-1)[0];
+        return `<div class="card flat s-${sub}" style="border-top:8px solid var(--sc)"><div class="row"><b class="grow" style="font-size:1.1rem">${sub}</b><span class="small mute">${its.length} pieces of work${res ? ' · latest score ' + score(res) : ''}</span></div>
+          ${CP.ckBar(p, true)}<div class="small mute">${p.secure} of ${p.n} achieved${p.working ? ' · ' + p.working + ' in progress' : ''}</div>
+          <label class="small" style="margin-top:8px">My judgement</label><select data-att="${sub}">${CP.SCALE.map((x, i) => `<option value="${i}" ${a === i ? 'selected' : ''}>${x}${i ? ' — ' + CP.SCALE_DESC[i] : ''}</option>`).join('')}</select></div>`; }).join('')}</div>
+      <p class="small mute">The dark marker on each bar is roughly where we'd expect to be this term.</p>
+
+      <div class="grid c2 gap"><div class="card"><h3>Test and quiz scores</h3>${CP.chartResults(items)}</div><div class="card"><h3>Work saved each month</h3>${CP.chartMonthly(items)}</div></div>
+
+      <h3 class="gap">Learning summaries</h3><div id="reps"></div>
+
+      <h3 class="gap">Curriculum checklist <span class="small mute" style="font-family:Nunito;font-weight:600">— Year ${y} statements, tap to change</span></h3>
+      <div class="grid c2">${CFG.subjects.map((sub) => `<div class="card flat"><h4 style="margin:0 0 4px;font:700 1.5rem Poppins,sans-serif">${sub}</h4>${CP.listFor(sub, y).map((x) => { const v = checks[x.key] || 0; return `<div class="ck3"><span class="t">${esc(x.text)}</span><button class="btn sm s${v}" data-k="${esc(x.key)}">${['Not yet', 'Working on', 'Achieved'][v]}</button></div>`; }).join('') || '<p class="mute small">No statements set for this subject. Edit assets/curriculum.js.</p>'}</div>`).join('')}</div>`;
+    $('#yr').onchange = async (e) => { s.year = Number(e.target.value) || null; await call('students/' + s.id, { method: 'PATCH', body: { year: s.year } }); draw(); };
+    $$('[data-att]', box).forEach((el) => (el.onchange = async () => { checks['att|' + el.dataset.att] = Number(el.value); await call(`students/${s.id}/checks`, { method: 'PUT', body: { changes: { ['att|' + el.dataset.att]: Number(el.value) } } }); toast('Saved'); }));
+    $$('.ck3 button', box).forEach((b) => (b.onclick = async () => { const k = b.dataset.k, v = ((checks[k] || 0) + 1) % 3; checks[k] = v; await call(`students/${s.id}/checks`, { method: 'PUT', body: { changes: { [k]: v } } }); draw(); }));
+    $('#cl1').onclick = () => claudeFlow(s, items, checks, reports, 1, () => route());
+    $('#cl2').onclick = () => claudeFlow(s, items, checks, reports, 2, () => route());
+    const rb = $('#reps', box);
+    if (!reports.length) rb.innerHTML = `<div class="empty"><h3>No summaries yet</h3><p>Press <b>Analyse with Claude</b>, then paste Claude's reply here. It is saved with this student and you choose whether to share it with the family.</p></div>`;
+    reports.forEach((r, i) => {
+      const c = document.createElement('div'); c.className = 'card gap';
+      c.innerHTML = `<div class="row noprint" style="margin-bottom:8px"><label class="row" style="margin:0;font-weight:800"><input type="checkbox" ${r.visible ? 'checked' : ''}> Share with family &amp; ${esc(nm)}</label><span class="grow"></span><button class="btn sm danger">${svg('trash')} Delete</button></div>${CP.reportHtml(r, nm, { teacher: true })}`;
+      if (i > 0) { c.querySelector('.rep').style.display = 'none'; const t = document.createElement('button'); t.className = 'btn sm'; t.textContent = 'Show'; t.onclick = () => { const q = c.querySelector('.rep'); q.style.display = q.style.display === 'none' ? '' : 'none'; t.textContent = q.style.display === 'none' ? 'Show' : 'Hide'; }; c.querySelector('.noprint').insertBefore(t, c.querySelector('.grow')); }
+      c.querySelector('input').onchange = async (e) => { await call('reports/' + r.id, { method: 'PATCH', body: { visible: e.target.checked } }); r.visible = e.target.checked; toast(e.target.checked ? 'Shared with family' : 'Hidden from family'); };
+      c.querySelector('.danger').onclick = async () => { if (!confirm('Delete this summary?')) return; await call('reports/' + r.id, { method: 'DELETE' }); reports.splice(i, 1); _pc[s.id].reports = reports; draw(); };
+      rb.appendChild(c);
+    });
+  };
+  draw();
+}
+
+/* ---------- the Claude flow: build prompt -> paste reply -> preview -> save ---------- */
+function claudeFlow(s, items, checks, reports, start, done) {
+  const nm = firstName(s.name);
+  const m = document.createElement('div'); m.className = 'modal'; m.setAttribute('role', 'dialog');
+  const close = () => m.remove();
+  m.innerHTML = `<div class="sheet wide"><div class="row"><h3 class="grow" style="margin:0">Analyse ${esc(nm)}'s work with Claude</h3><button class="btn sm" id="x" aria-label="Close">${svg('x')}</button></div>
+    <ol class="steps">
+      <li id="st1"><b>Get the prompt and files ready</b>
+        <div class="row" style="margin-top:8px"><label class="small" style="margin:0">Term <select id="term" style="width:auto">${[1, 2, 3, 4].map((t) => `<option ${t === CP.termNow() ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+          <label class="small" style="margin:0">Images per subject <input type="text" id="nimg" value="8" inputmode="numeric" style="width:64px"></label>
+          <button class="btn pri" id="build">Prepare</button></div>
+        <div id="packout" class="hide"><p class="small mute" id="packinfo"></p>
+          <div class="row"><button class="btn pri" id="cp">${svg('copy')} Copy prompt</button><button class="btn" id="dz">${svg('dl')} Download images &amp; files (zip)</button></div>
+          <p class="small mute">Open Claude (claude.ai), paste the prompt, then drag in the images from the unzipped folder. Check no image shows the student's name — the prompt hides it but pictures can't be edited.</p></div></li>
+      <li id="st2"><b>Paste Claude's reply</b>
+        <textarea id="reply" style="min-height:150px" placeholder="Paste everything Claude replied with — the summary and the JSON block."></textarea>
+        <div class="row" style="margin-top:8px"><button class="btn pri" id="chk">Check &amp; preview</button><span class="small err" id="perr" style="color:#c2321f;font-weight:700"></span></div></li>
+      <li id="st3" class="hide"><b>Preview, then save</b><div id="prev" class="card flat gap" style="max-height:46vh;overflow:auto"></div>
+        <label class="row" style="font-weight:700"><input type="checkbox" id="vis"> Share with ${esc(nm)}'s family straight away <span class="small mute">(you can change this later)</span></label>
+        <div id="sugg"></div>
+        <div class="row gap"><button class="btn pri" id="save">Save to ${esc(nm)}'s portfolio</button></div></li></ol></div>`;
+  document.body.appendChild(m);
+  m.onclick = (e) => { if (e.target === m) close(); }; $('#x', m).onclick = close;
+  let pack = null, parsed = null;
+  $('#build', m).onclick = async () => {
+    const b = $('#build', m); b.disabled = true; b.textContent = 'Preparing…';
+    try {
+      pack = await CP.buildPack(s, items, checks, reports, { term: Number($('#term', m).value), imagesPerSubject: Math.max(0, Math.min(20, Number($('#nimg', m).value) || 8)) });
+      $('#packout', m).classList.remove('hide');
+      $('#packinfo', m).textContent = `Prompt ready (${Math.round(pack.prompt.length / 100) / 10}k characters) with ${pack.files.length} file${pack.files.length === 1 ? '' : 's'} to attach.`;
+      if (!pack.files.length) $('#dz', m).disabled = true;
+    } catch (e) { toast('Could not prepare: ' + e.message, 4000); }
+    b.disabled = false; b.textContent = 'Prepare again';
+  };
+  $('#cp', m).onclick = () => copy(pack.prompt, 'Prompt copied — paste it into Claude');
+  $('#dz', m).onclick = async () => {
+    const b = $('#dz', m); b.disabled = true;
+    const entries = [{ name: 'PROMPT.txt', data: async () => pack.prompt }, { name: 'README.txt', data: async () => 'Paste PROMPT.txt into Claude, then attach the images/PDFs in this folder (they are named by subject).\nThe student name is replaced by [Name] in the prompt; check the pictures do not show a name.\n' }]
+      .concat(pack.files.map((f) => ({ name: f.name, data: async () => (await fetch(f.item.url)).blob() })));
+    try { const r = await CP.makeZip(entries, (d, n) => (b.textContent = `Zipping ${d}/${n}…`)); CP.saveBlob(r.blob, `Claude pack ${CP.dstr(Date.now())}.zip`); } catch (e) { toast(e.message); }
+    b.disabled = false; b.innerHTML = svg('dl') + ' Download images &amp; files (zip)';
+  };
+  $('#chk', m).onclick = () => {
+    const txt = $('#reply', m).value.trim(); $('#perr', m).textContent = '';
+    if (txt.length < 40) { $('#perr', m).textContent = 'Paste Claude\'s reply first.'; return; }
+    parsed = CP.parseReply(txt, s);
+    const rep = { id: 'x', title: parsed.data.title || 'Learning summary', createdAt: Date.now(), term: Number($('#term', m).value), data: parsed.data };
+    $('#prev', m).innerHTML = CP.reportHtml(rep, nm, { teacher: true }) + (parsed.structured ? '' : '<p class="small mute">Claude\'s reply had no JSON block, so it will be saved as plain text. (Ask Claude: “please reply again with the JSON block”.)</p>');
+    $('#st3', m).classList.remove('hide');
+    const sg = parsed.data.checklistSuggestions || [];
+    $('#sugg', m).innerHTML = sg.length ? `<h4 style="margin:10px 0 4px">Update the curriculum checklist?</h4>${sg.map((c, i) => `<label class="row small" style="font-weight:600;margin:3px 0"><input type="checkbox" checked data-i="${i}"> <b>${c.status === 2 ? 'Achieved' : 'Working on'}</b> — ${esc(c.text)}<span class="mute"> (${esc(c.reason)})</span></label>`).join('')}` : '';
+    $('#st3', m).scrollIntoView({ behavior: 'smooth' });
+  };
+  $('#save', m).onclick = async () => {
+    const b = $('#save', m); b.disabled = true;
+    try {
+      const ch = {}; $$('#sugg input:checked', m).forEach((c) => { const g = parsed.data.checklistSuggestions[Number(c.dataset.i)]; ch[g.key] = g.status; });
+      const data = Object.assign({}, parsed.data);
+      await call(`students/${s.id}/reports`, { method: 'POST', body: { title: data.title || `Term ${$('#term', m).value} learning summary`, term: Number($('#term', m).value), data, visible: $('#vis', m).checked } });
+      if (Object.keys(ch).length) await call(`students/${s.id}/checks`, { method: 'PUT', body: { changes: ch } });
+      toast('Saved'); close(); done();
+    } catch (e) { toast(e.message, 4000); b.disabled = false; }
+  };
+  if (start === 2) $('#st2', m).scrollIntoView();
+}
+
+/* ---------------- class progress overview ---------------- */
+async function progressOverview() {
+  const d = await call('progress');
+  const st = d.students;
+  if (!st.length) { app.innerHTML = '<div class="empty"><h3>No students yet</h3><p><a class="btn pri" href="#/roster">Add your class</a></p></div>'; return; }
+  const noRep = st.filter((s) => !s.report).length, shared = st.filter((s) => s.report && s.report.visible).length;
+  app.innerHTML = `<h2>Class progress</h2>
+    <div class="stats"><div class="card stat"><b>${st.length - noRep}</b><span>Students with a summary</span></div><div class="card stat"><b>${noRep}</b><span>Still to analyse</span></div><div class="card stat"><b>${shared}</b><span>Shared with families</span></div><div class="card stat"><b>${CP.expectedPct()}%</b><span>Expected by now (term ${CP.termNow()})</span></div></div>
+    <div class="card" style="padding:8px 12px;overflow:auto"><table><thead><tr><th>Student</th><th>Yr</th>${CFG.subjects.map((x) => `<th>${x}</th>`).join('')}<th>Latest summary</th></tr></thead><tbody id="tb"></tbody></table></div>
+    <p class="small mute">Each bar shows checklist statements achieved (green) and in progress (yellow). The label is your attainment judgement, or the level from the latest Claude summary if you haven't set one. Click a row to open the student.</p>`;
+  const tb = $('#tb');
+  st.forEach((s) => {
+    const y = CP.yearOf(s), tr = document.createElement('tr'); tr.style.cursor = 'pointer';
+    tr.innerHTML = `<td><b>${esc(s.name)}</b></td><td>${s.year || '–'}</td>${CFG.subjects.map((sub) => { const p = CP.progressFor(s.checks, sub, y), a = CP.attOf(s.checks, sub), lv = a ? CP.SCALE[a] : (s.report && s.report.levels[sub]) || ''; return `<td style="min-width:120px"><div class="small">${esc(lv) || '<span class="mute">–</span>'}</div>${CP.ckBar(p, false)}<div class="small mute">${p.secure}/${p.n} · ${(s.counts[sub] || 0)} work</div></td>`; }).join('')}<td class="small">${s.report ? esc(fmtDate(s.report.createdAt)) + (s.report.visible ? ' · shared' : ' · private') : '<span class="mute">None yet</span>'}</td>`;
+    tr.onclick = () => (location.hash = `#/s/${s.id}/progress`);
+    tb.appendChild(tr);
+  });
+}
+
+function qrModal(s) {
+  const m = document.createElement('div'); m.className = 'modal';
+  m.innerHTML = `<div class="sheet narrow center"><h3>${esc(s.name)} — family QR</h3><div style="width:260px;max-width:100%;margin:10px auto;background:#fff;padding:8px;border:2px solid var(--line);border-radius:12px">${qrSvg(famUrl(s))}</div><p class="small mute" style="word-break:break-all">${esc(famUrl(s))}</p><div class="row" style="justify-content:center"><a class="btn pri" href="#/print/family">${svg('print')} Print cards</a><button class="btn" id="cl">Close</button></div></div>`;
+  m.onclick = (e) => { if (e.target === m || e.target.id === 'cl') m.remove(); };
+  m.querySelector('a').onclick = () => m.remove();
+  document.body.appendChild(m);
+}
+
+/* ---------------- roster ---------------- */
+async function rosterView() {
+  await loadStudents();
+  app.innerHTML = `<h2>Roster</h2>
+    <div class="grid c2">
+      <div class="card"><h3>Add students</h3><p class="mute small">One name per line. Each student gets a personal login code and a private family QR code automatically.</p>
+        <textarea id="names" aria-label="Names" placeholder="Ava Smith&#10;Ben Jones&#10;…"></textarea><div class="row gap"><label class="small row" style="margin:0;font-weight:700">Year level <select id="nyear" style="width:auto"><option value="">—</option>${[4, 5, 6].map((v) => `<option>${v}</option>`).join('')}</select></label><button class="btn pri" id="addb">${svg('plus')} Add to class</button></div></div>
+      <div class="card"><h3>How access works</h3><p class="small"><b>Student code</b> — six characters, typed once on a shared iPad. Lets a student save and view their own work only.</p><p class="small"><b>Family QR</b> — a long private link, read-only, one child. If a card is lost or shared, press <i>New family QR</i> and the old one stops working straight away.</p><p class="small"><b>Year level</b> picks which curriculum statements appear on the Progress page. <b>Pronoun</b> is only used so Claude writes the summary correctly.</p></div>
+    </div>
+    <div class="card gap" style="padding:8px 12px;overflow:auto"><table><thead><tr><th>Name</th><th>Year</th><th>Pronoun</th><th>Student code</th><th>Family link</th><th>Work</th><th></th></tr></thead><tbody id="tb"></tbody></table></div>`;
+  const tb = $('#tb');
+  if (!students.length) tb.innerHTML = '<tr><td colspan="7" class="mute">No students yet.</td></tr>';
+  students.forEach((s) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td><input type="text" value="${esc(s.name)}" aria-label="Name" maxlength="60"></td>
+      <td><select data-f="year" aria-label="Year level" style="width:auto"><option value="">–</option>${[4, 5, 6].map((v) => `<option ${v === s.year ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
+      <td><select data-f="pron" aria-label="Pronoun" style="width:auto"><option value="">–</option>${[['he', 'he/him'], ['she', 'she/her'], ['they', 'they/them']].map(([v, l]) => `<option value="${v}" ${v === s.pron ? 'selected' : ''}>${l}</option>`).join('')}</select></td>
+      <td><code class="k">${fmtCode(s.code)}</code> <button class="btn sm" data-a="nc" title="Make a new code">New</button></td>
+      <td><button class="btn sm" data-a="cl">${svg('copy')} Copy</button> <button class="btn sm" data-a="nf" title="Old QR stops working">New family QR</button></td><td>${s.total}</td><td><button class="btn sm danger" data-a="del" aria-label="Delete ${esc(s.name)}">${svg('trash')}</button></td>`;
+    $('input', tr).onchange = async (e) => { try { await call('students/' + s.id, { method: 'PATCH', body: { name: e.target.value } }); toast('Name saved'); } catch (x) { toast(x.message); } };
+    $$('select', tr).forEach((sel) => (sel.onchange = async () => { try { await call('students/' + s.id, { method: 'PATCH', body: { [sel.dataset.f]: sel.value } }); toast('Saved'); } catch (x) { toast(x.message); } }));
+    tr.onclick = async (e) => {
+      const a = e.target.closest('button')?.dataset.a; if (!a) return;
+      try {
+        if (a === 'cl') return copy(famUrl(s), 'Family link copied');
+        if (a === 'nc') { if (!confirm(`Make a new login code for ${s.name}? Their old code stops working.`)) return; await call('students/' + s.id, { method: 'PATCH', body: { regenCode: true } }); }
+        if (a === 'nf') { if (!confirm(`Make a new family QR for ${s.name}? The old QR/link stops working — you'll need to reprint it.`)) return; await call('students/' + s.id, { method: 'PATCH', body: { regenFamily: true } }); }
+        if (a === 'del') { if (!confirm(`Delete ${s.name} and all ${s.total} pieces of their work? This cannot be undone.`)) return; await call('students/' + s.id, { method: 'DELETE' }); }
+        rosterView();
+      } catch (x) { toast(x.message); }
+    };
+    tb.appendChild(tr);
+  });
+  $('#addb').onclick = async () => {
+    const names = $('#names').value.split(/\n/).map((x) => x.trim()).filter(Boolean);
+    if (!names.length) return toast('Type or paste some names first');
+    try { const d = await call('students', { method: 'POST', body: { names, year: $('#nyear').value } }); toast(d.students.length + ' students added'); rosterView(); } catch (x) { toast(x.message); }
+  };
+}
+
+/* ---------------- print ---------------- */
+async function printView(kind) {
+  await loadStudents();
+  kind = kind === 'login' ? 'login' : 'family';
+  if (!students.length) { app.innerHTML = `<div class="empty"><h3>No students yet</h3><p><a class="btn pri" href="#/roster">Add your class</a></p></div>`; return; }
+  const sel = new Set(students.map((s) => s.id));
+  app.innerHTML = `<div class="printbar noprint"><h2 style="margin:0" class="grow">Print cards</h2>
+      <div class="tabs" style="margin:0"><a class="tab" role="tab" aria-selected="${kind === 'family'}" href="#/print/family">Family QR cards</a><a class="tab" role="tab" aria-selected="${kind === 'login'}" href="#/print/login">Student login cards</a></div>
+      <button class="btn pri" id="pr">${svg('print')} Print</button></div>
+    <p class="mute small noprint">${kind === 'family' ? 'Send one home with each family. Anyone who scans it can see that child’s portfolio, so treat it like a school report.' : 'Hand these to students (or keep them at the iPad station). They are only used to sign in and save work.'} ${kind === 'family' ? '4' : '5'} cards per A4 page — cut each one out.</p>
+    <details class="card flat noprint" style="margin-bottom:16px"><summary style="cursor:pointer;font-weight:800">Choose students (${students.length} selected)</summary><div class="row gap" id="sel">${students.map((s) => `<label class="row" style="font-weight:700;margin:0"><input type="checkbox" checked data-id="${s.id}"> ${esc(s.name)}</label>`).join('')}</div></details>
+    <div class="sheetp" id="sheet"></div>`;
+  const draw = () => {
+    $('#sheet').className = 'sheetp ' + (kind === 'family' ? 'fam' : 'log');
+    $('#sheet').innerHTML = students.filter((s) => sel.has(s.id)).map((s) => kind === 'family'
+      ? `<div class="pcard fam"><div class="qr">${qrSvg(famUrl(s))}</div><div class="ptx"><h4>${esc(firstName(s.name))}’s portfolio</h4><p class="who">${esc(s.name)}</p><p>Scan with your phone camera to see ${esc(firstName(s.name))}’s learning, next steps and ideas for home. You can download their work from the page. This link is private to your family — please don’t share it.</p></div></div>`
+      : `<div class="pcard log"><div class="ptx"><p class="who">${esc(s.name)}</p><div class="code">${fmtCode(s.code)}</div></div><p class="how">Go to <b>${esc(ORIGIN.replace(/^https?:\/\//, ''))}</b> or tap “Save to portfolio” in any class app, then type your code. Keep it private.</p></div>`).join('');
+  };
+  draw();
+  $('#sel').onchange = (e) => { const id = e.target.dataset.id; e.target.checked ? sel.add(id) : sel.delete(id); $('summary').textContent = `Choose students (${sel.size} selected)`; draw(); };
+  $('#pr').onclick = () => print();
+}
+
+/* ---------------- connect apps ---------------- */
+function appsView() {
+  const snip = `<script src="${ORIGIN}/sdk.js" data-subject="Maths" data-app="Whiteboard" defer><\/script>`;
+  app.innerHTML = `<h2>Connect an app</h2>
+    <div class="grid c2">
+      <div class="card"><h3>Option 1 — ask Claude</h3><p>Download the instructions file, then tell Claude: <i>“Read ADD-PORTFOLIO-TO-AN-APP.md and add portfolio saving to my <b>[app name]</b> app.”</i> It knows how to find the right things to save (drawings, videos, recordings, scores) and test it.</p>
+        <div class="row gap"><button class="btn pri" id="dlmd">${svg('dl')} Download instructions (.md)</button></div><p class="small mute">Already filled in with this site’s address.</p></div>
+      <div class="card"><h3>Option 2 — one line</h3><p>Paste this just before <code>&lt;/body&gt;</code> in any app’s <code>index.html</code>. Change the subject and app name. Students get a “Save to portfolio” button that can save a screenshot or any photo, video or file.</p>
+        <textarea id="snip" readonly style="min-height:96px;font:13px/1.4 ui-monospace,Menlo,monospace">${esc(snip)}</textarea><div class="row gap"><button class="btn" id="cs">${svg('copy')} Copy line</button></div></div>
+    </div>
+    <div class="card gap"><h3>Good to know</h3><ul><li>Subjects it understands: <b>Maths, Reading, Writing, Topic</b>. Anything else lands in the Inbox for you to sort.</li><li>Students sign in once with their code. On a shared iPad it signs them out after 20 idle minutes, or when they press “That’s me done”.</li><li>You can also sign in to the button yourself and send work to one or several students.</li><li>Try it without changing an app: <a href="/sdk-demo.html">open the test page</a>.</li></ul></div>`;
+  $('#cs').onclick = () => copy(snip, 'Copied');
+  $('#dlmd').onclick = async () => {
+    try {
+      const t = (await (await fetch('/ADD-PORTFOLIO-TO-AN-APP.md')).text()).replace(/https:\/\/YOUR-PORTFOLIO\.pages\.dev/g, ORIGIN);
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([t], { type: 'text/markdown' })); a.download = 'ADD-PORTFOLIO-TO-AN-APP.md'; a.click();
+    } catch { toast('Could not download'); }
+  };
+}
+
+/* ---------------- close class / backups / start new class ---------------- */
+async function classView() {
+  await loadStudents();
+  const dstr = (t) => new Date(t).toISOString().slice(0, 10);
+  const in6w = dstr(Date.now() + 42 * 864e5);
+  app.innerHTML = `<h2>Close class</h2>
+    <p class="lead2" style="max-width:46em">At the end of the year: back up each child's portfolio, close the class so no more work is saved, give families time to download, then clear everything and start fresh for your new students.</p>
+    <div class="grid c2">
+      <div class="card"><h3>${cls.closed ? 'Class is closed' : '1 · Close the class'}</h3>
+        ${cls.closed ? `<p>Closed ${fmtDate(cls.closedAt)}. Students can no longer sign in or save work. You can still see everything here.</p>
+          <label for="fu">Families can view &amp; download until</label><input type="text" id="fu" value="${cls.familyUntil ? dstr(cls.familyUntil) : ''}" placeholder="YYYY-MM-DD (blank = no end date)">
+          <div class="row gap"><button class="btn" id="fusave">Save date</button><button class="btn grn" id="reopen">Reopen class</button></div>`
+          : `<p>Students won't be able to sign in or save work. Families keep a read-only view and can download their child's portfolio.</p>
+          <label for="fu">Families can view &amp; download until</label><input type="text" id="fu" value="${in6w}" placeholder="YYYY-MM-DD (blank = no end date)">
+          <p class="small mute">Back up first (below) — closing doesn't delete anything.</p><div class="row gap"><button class="btn pri" id="close">${svg('key')} Close class</button></div>`}</div>
+      <div class="card"><h3>What families see</h3><label class="row" style="font-weight:700;margin:0"><input type="checkbox" id="sp" ${cls.showProgress ? 'checked' : ''}> Show curriculum progress bars on the family page</label>
+        <p class="small mute">Summaries you tick “Share with family” on always show. The progress bars (achieved / working on) are optional and off by default. Your private notes and suggestions are never shared.</p></div>
+    </div>
+    <div class="card gap"><h3>Back up each child's portfolio</h3><p class="small mute">Each backup is one zip with every file (including ones hidden from families), a printable summary page, and any Claude summaries. Large classes can take a while — keep this page open.</p>
+      <div class="row"><button class="btn pri" id="alldl">${svg('dl')} Download all (one after another)</button><span id="allmsg" class="small mute"></span></div>
+      <table style="margin-top:10px"><tbody id="bk"></tbody></table></div>
+    <div class="card gap danger-zone"><h3 style="color:#c2321f">Start a new class</h3>
+      ${cls.closed ? `<p>This <b>permanently deletes</b> every student, every file, every summary and checklist tick in this portfolio, and reopens it empty. Make sure you have the backups you need.</p>
+        <label for="del">Type DELETE to confirm</label><input type="text" id="del" style="max-width:240px" autocomplete="off"><div class="row gap"><button class="btn danger" id="wipe">${svg('trash')} Delete everything &amp; start fresh</button><span id="wipemsg" class="small mute"></span></div>`
+        : `<p class="mute">Close the class first. This option appears once the class is closed.</p>`}</div>`;
+  const pd = (v) => { v = (v || '').trim(); if (!v) return 0; const t = new Date(v + 'T23:59:59').getTime(); return isNaN(t) ? null : t; };
+  if ($('#close')) $('#close').onclick = async () => {
+    const f = pd($('#fu').value); if (f === null) return toast('Use the date format YYYY-MM-DD');
+    if (!confirm('Close the class now? Students will no longer be able to sign in or save work.')) return;
+    await call('class/close', { method: 'POST', body: { familyUntil: f } }); toast('Class closed'); route();
+  };
+  if ($('#fusave')) $('#fusave').onclick = async () => { const f = pd($('#fu').value); if (f === null) return toast('Use the date format YYYY-MM-DD'); await call('class', { method: 'PATCH', body: { familyUntil: f } }); toast('Saved'); route(); };
+  if ($('#reopen')) $('#reopen').onclick = async () => { if (!confirm('Reopen the class so students can save work again?')) return; await call('class/reopen', { method: 'POST' }); toast('Class reopened'); route(); };
+  $('#sp').onchange = async (e) => { await call('class', { method: 'PATCH', body: { showProgress: e.target.checked } }); toast('Saved'); };
+  const bk = $('#bk');
+  async function backup(s, btn) {
+    const orig = btn.innerHTML; btn.disabled = true;
+    try {
+      const [d, pr] = await Promise.all([call(`students/${s.id}/items`), call(`students/${s.id}/progress`)]);
+      await CP.downloadPortfolio({ student: s, items: d.items, reports: pr.reports, checks: pr.checks, showChecks: true, onProgress: (a, n) => (btn.textContent = `${a}/${n + 1}`) });
+    } catch (e) { toast(s.name + ': ' + e.message, 4000); }
+    btn.disabled = false; btn.innerHTML = orig;
+  }
+  students.forEach((s) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td><b>${esc(s.name)}</b></td><td class="mute small">${s.total} files</td><td style="text-align:right"><button class="btn sm">${svg('dl')} Download</button></td>`;
+    tr.querySelector('button').onclick = (e) => backup(s, e.currentTarget);
+    bk.appendChild(tr);
+  });
+  $('#alldl').onclick = async () => {
+    const btns = [...bk.querySelectorAll('button')]; $('#alldl').disabled = true;
+    for (let i = 0; i < students.length; i++) { $('#allmsg').textContent = `Downloading ${i + 1} of ${students.length}: ${students[i].name}…`; await backup(students[i], btns[i]); await new Promise((r) => setTimeout(r, 600)); }
+    $('#allmsg').textContent = 'All done. If your browser asked, allow multiple downloads.'; $('#alldl').disabled = false;
+  };
+  if ($('#wipe')) $('#wipe').onclick = async () => {
+    if ($('#del').value !== 'DELETE') return toast('Type DELETE (capitals) to confirm');
+    if (!confirm('Last chance: permanently delete ALL students and work?')) return;
+    $('#wipe').disabled = true;
+    try {
+      for (;;) { const r = await call('class/reset-step', { method: 'POST', body: { confirm: 'DELETE' } }); if (r.done) break; $('#wipemsg').textContent = `Deleting files… ${r.remaining} left`; }
+      toast('Everything cleared. Ready for a new class.', 4000); location.hash = '#/roster'; route();
+    } catch (e) { toast(e.message, 5000); $('#wipe').disabled = false; }
+  };
+}
+route();
+</script>
+</body>
+</html>

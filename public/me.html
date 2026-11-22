@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en-NZ">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>My portfolio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="icon" href="/assets/art/favicon.png"><link rel="apple-touch-icon" href="/assets/art/icon-192.png">
+<link rel="stylesheet" href="/assets/style.css">
+<link rel="stylesheet" href="/assets/theme-bold.css">
+<script src="/assets/config.js"></script>
+<script src="/assets/curriculum.js"></script>
+<script src="/assets/qrcode.js"></script>
+<script src="/assets/common.js"></script>
+<script src="/assets/progress.js"></script>
+<script src="/assets/dashboard.js"></script>
+</head>
+<body class="dashpage">
+<main id="pf"></main>
+<script>
+const { $, svg, CFG, api, store, renderPortfolio, firstName, avColor, initials } = CP;
+const token = () => store.get('cp_s');
+if (!token()) location.replace('/');
+api('my', { token: token() }).then((d) => {
+  document.title = firstName(d.student.name) + '’s portfolio';
+  CP.dashboard($('#pf'), d, { who: 'student', onDone: () => { store.del('cp_s'); location.href = '/#switch'; }, pfOpts: { canDelete: true, token, showInbox: true, emptyText: 'Open a class app and tap “Save to portfolio” to add your work.' } });
+}).catch((e) => { if (e.status === 401) { store.del('cp_s'); location.href = '/'; } else $('#pf').innerHTML = '<div class="empty"><p>' + CP.esc(e.message) + '</p></div>'; });
+</script>
+</body>
+</html>
