@@ -189,3 +189,25 @@ body{background:linear-gradient(rgba(255,74,28,.62),rgba(255,74,28,.62)),url(/as
 .pcard.log .code{font-size:5.4cqw;margin:.3cqw 0 0}
 .pcard.log .how{top:43.5%;left:17.5%;width:76%;font-size:1.4cqw;line-height:1.3;font-weight:600;color:#444}
 .pcard.log .how{top:50.5%}
+
+/* ===== big top bar (3x) ===== */
+.top{position:relative;min-height:192px;display:flex;align-items:center}
+.top .in{width:100%;min-height:192px;padding:22px 28px;gap:28px;max-width:1280px}
+.top::before{opacity:.95;background-size:auto 100%}
+.logo{width:120px;height:120px;border-radius:26px;flex:none}
+.brand{gap:20px}
+.brand b{font-size:2.6rem;line-height:1.02}
+.brand small{font-size:1rem;margin-top:6px;letter-spacing:.12em}
+.nav{gap:10px;align-self:center}
+.nav a,.nav button{font-size:1.08rem;padding:12px 18px;gap:9px}
+.nav svg{width:22px;height:22px}
+@media(max-width:900px){.top,.top .in{min-height:0}.top .in{flex-wrap:wrap;padding:16px;gap:12px}.logo{width:72px;height:72px;border-radius:18px}.brand b{font-size:1.7rem}.nav{margin-left:0;width:100%}}
+@media print{.top{display:none!important}}
+.top .in{flex-wrap:wrap;align-content:center;row-gap:14px}
+.top .nav{order:3;width:100%;margin:0;flex-wrap:wrap;gap:8px}
+.top .nav a,.top .nav button{background:rgba(27,27,27,.82);backdrop-filter:blur(2px)}
+.top .nav a:hover,.top .nav button:hover{background:#000}
+.top .nav a.on{background:var(--cream);color:var(--char)}
+.top{min-height:0}.top .in{min-height:0;padding:20px 28px}
+.logo{width:96px;height:96px;border-radius:22px}
+.brand b{font-size:2.2rem}
