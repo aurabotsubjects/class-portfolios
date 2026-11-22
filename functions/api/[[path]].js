@@ -74,6 +74,8 @@ function ensureSchema(db) {
     schemaReady = db.batch([
       db.prepare('CREATE TABLE IF NOT EXISTS students(id TEXT PRIMARY KEY, name TEXT NOT NULL, code TEXT NOT NULL UNIQUE, family_token TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL, year INTEGER, pron TEXT)'),
       db.prepare('CREATE TABLE IF NOT EXISTS settings(k TEXT PRIMARY KEY, v TEXT)'),
+      db.prepare('CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY, date TEXT NOT NULL, end_date TEXT, time TEXT, title TEXT NOT NULL, note TEXT, kind TEXT NOT NULL DEFAULT \'event\', created_at INTEGER NOT NULL)'),
+      db.prepare('CREATE INDEX IF NOT EXISTS idx_events_date ON events(date)'),
       db.prepare('CREATE TABLE IF NOT EXISTS checks(student_id TEXT NOT NULL, k TEXT NOT NULL, status INTEGER NOT NULL, PRIMARY KEY(student_id,k))'),
       db.prepare('CREATE TABLE IF NOT EXISTS reports(id TEXT PRIMARY KEY, student_id TEXT NOT NULL, title TEXT NOT NULL, term INTEGER, created_at INTEGER NOT NULL, visible INTEGER NOT NULL DEFAULT 0, data TEXT NOT NULL)'),
       db.prepare('CREATE INDEX IF NOT EXISTS idx_reports_student ON reports(student_id, created_at)'),
@@ -103,6 +105,14 @@ async function getSettings(db) {
   return { closedAt: Number(o.closed_at) || 0, familyUntil: Number(o.family_until) || 0, showProgress: o.show_progress === '1' };
 }
 const setSetting = (db, k, v) => db.prepare('INSERT INTO settings(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=?').bind(k, String(v), String(v)).run();
+const EVENT_KINDS = ['event', 'trip', 'due', 'holiday'];
+const isDay = (x) => typeof x === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(x) && !Number.isNaN(Date.parse(x + 'T00:00:00Z'));
+async function calendarOut(db) {
+  const rows = (await db.prepare('SELECT * FROM events ORDER BY date, time, created_at LIMIT 1500').all()).results;
+  const n = {}; for (const r of (await db.prepare("SELECT k,v FROM settings WHERE k IN ('notice','notice_at')").all()).results) n[r.k] = r.v;
+  return { events: rows.map((r) => ({ id: r.id, date: r.date, endDate: r.end_date || null, time: r.time || '', title: r.title, note: r.note || '', kind: r.kind })),
+    notice: { text: n.notice || '', at: Number(n.notice_at) || 0 } };
+}
 const classOut = (c) => ({ closed: !!c.closedAt, closedAt: c.closedAt, familyUntil: c.familyUntil, showProgress: c.showProgress });
 // Reports keep private notes for the teacher; these never go to families or students.
 function publicReport(r) {
@@ -201,7 +211,7 @@ export async function onRequest({ request, env }) {
       const cls = await getSettings(db);
       if (cls.closedAt && cls.familyUntil && Date.now() > cls.familyUntil) return json({ error: 'This class portfolio has now closed. Please contact your child\'s school if you need a copy of their work.', expired: true }, 410);
       const rows = await db.prepare('SELECT * FROM items WHERE student_id=? AND family_visible=1 ORDER BY created_at DESC').bind(st.id).all();
-      return json({ student: studentOut(st), items: rows.results.map(itemOut), reports: await visibleReports(db, st.id), checks: cls.showProgress ? await checksOf(db, st.id) : null, class: classOut(cls) });
+      return json({ student: studentOut(st), items: rows.results.map(itemOut), reports: await visibleReports(db, st.id), checks: cls.showProgress ? await checksOf(db, st.id) : null, class: classOut(cls), calendar: await calendarOut(db) });
     }
 
     // ----- files (capability URLs: the id is a long random string) -----
@@ -224,7 +234,7 @@ export async function onRequest({ request, env }) {
       if (!st) return fail(401, 'Please sign in');
       const rows = await db.prepare('SELECT * FROM items WHERE student_id=? ORDER BY created_at DESC').bind(me.sid).all();
       const cls = await getSettings(db);
-      return json({ student: studentOut(st), items: rows.results.map(itemOut), reports: await visibleReports(db, st.id), checks: cls.showProgress ? await checksOf(db, st.id) : null });
+      return json({ student: studentOut(st), items: rows.results.map(itemOut), reports: await visibleReports(db, st.id), checks: cls.showProgress ? await checksOf(db, st.id) : null, calendar: await calendarOut(db) });
     }
 
     if (a === 'roster' && m === 'GET' && teacher) { // names only, for the widget's "send to…" picker
@@ -309,6 +319,34 @@ export async function onRequest({ request, env }) {
       await db.batch([db.prepare('DELETE FROM items WHERE student_id=?').bind(b), db.prepare('DELETE FROM checks WHERE student_id=?').bind(b), db.prepare('DELETE FROM reports WHERE student_id=?').bind(b), db.prepare('DELETE FROM students WHERE id=?').bind(b)]);
       return json({ ok: true, deleted: rows.length });
     }
+    // ----- calendar & notice (teacher writes, everyone reads via /my and /family) -----
+    if (a === 'calendar' && !b && m === 'GET' && teacher) return json(await calendarOut(db));
+    if ((a === 'events' && m === 'POST' && !b) || (a === 'events' && b && m === 'PATCH')) {
+      if (!teacher) return fail(403, 'Teacher only');
+      const p = await request.json().catch(() => ({}));
+      const title = clip(p.title, 120), date = String(p.date || ''), end = p.endDate ? String(p.endDate) : '';
+      if (!title) return fail(400, 'Please give the event a title');
+      if (!isDay(date) || (end && (!isDay(end) || end < date))) return fail(400, 'Check the date');
+      const kind = EVENT_KINDS.includes(p.kind) ? p.kind : 'event', time = clip(p.time, 30) || null, note = clip(p.note, 500) || null;
+      if (m === 'POST') {
+        const id = randId(10);
+        await db.prepare('INSERT INTO events(id,date,end_date,time,title,note,kind,created_at) VALUES(?,?,?,?,?,?,?,?)').bind(id, date, end || null, time, title, note, kind, Date.now()).run();
+      } else await db.prepare('UPDATE events SET date=?,end_date=?,time=?,title=?,note=?,kind=? WHERE id=?').bind(date, end || null, time, title, note, kind, b).run();
+      return json(await calendarOut(db));
+    }
+    if (a === 'events' && b && m === 'DELETE') {
+      if (!teacher) return fail(403, 'Teacher only');
+      await db.prepare('DELETE FROM events WHERE id=?').bind(b).run();
+      return json(await calendarOut(db));
+    }
+    if (a === 'notice' && m === 'PUT') {
+      if (!teacher) return fail(403, 'Teacher only');
+      const p = await request.json().catch(() => ({}));
+      await setSetting(db, 'notice', clip(p.text, 2000) || '');
+      await setSetting(db, 'notice_at', Date.now());
+      return json(await calendarOut(db));
+    }
+
     // ----- manage files: list everything / bulk delete -----
     if (a === 'files' && !b && m === 'GET') {
       const rows = (await db.prepare('SELECT * FROM items ORDER BY created_at DESC').all()).results;
@@ -410,7 +448,7 @@ export async function onRequest({ request, env }) {
         const left = await db.prepare('SELECT COUNT(*) c FROM items').first();
         return json({ done: false, remaining: left.c });
       }
-      await db.batch([db.prepare('DELETE FROM students'), db.prepare('DELETE FROM checks'), db.prepare('DELETE FROM reports'), db.prepare('DELETE FROM settings'), db.prepare('DELETE FROM throttle')]);
+      await db.batch([db.prepare('DELETE FROM students'), db.prepare('DELETE FROM checks'), db.prepare('DELETE FROM reports'), db.prepare('DELETE FROM settings'), db.prepare('DELETE FROM events'), db.prepare('DELETE FROM throttle')]);
       return json({ done: true, remaining: 0 });
     }
 

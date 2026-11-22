@@ -211,3 +211,35 @@ body{background:linear-gradient(rgba(255,74,28,.62),rgba(255,74,28,.62)),url(/as
 .top{min-height:0}.top .in{min-height:0;padding:20px 28px}
 .logo{width:96px;height:96px;border-radius:22px}
 .brand b{font-size:2.2rem}
+
+/* ===== calendar, schedule and teacher notice ===== */
+.dnotice{background:var(--writing);color:var(--char);border:3px solid var(--char);border-radius:20px;padding:16px 20px;margin-bottom:16px;box-shadow:0 5px 0 rgba(0,0,0,.25)}
+.dnotice .nh{font-weight:900;text-transform:uppercase;letter-spacing:.08em;font-size:.78rem;margin-bottom:4px}
+.dnotice .nb{font-size:1.05rem;font-weight:600;line-height:1.5}.dnotice .ns{font-size:.78rem;margin-top:8px;opacity:.7}
+.cweek h3{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:0 0 8px}.cweek h3 small{font-size:.8rem;font-weight:600;color:var(--mute)}
+.cday{display:flex;gap:14px;padding:9px 6px;border-top:1.5px solid rgba(27,27,27,.12);align-items:flex-start}
+.cday .cdl{width:62px;flex:none;line-height:1.15}.cday .cdl b{display:block;font-weight:800}.cday .cdl span{font-size:.75rem;color:var(--mute)}
+.cday.today{background:#fff3c4;border-radius:12px;border-top-color:transparent}.cday.today .cdl b::after{content:" · today";font-size:.7rem;color:var(--orange-d)}
+.cday.off{background:repeating-linear-gradient(45deg,rgba(27,27,27,.05) 0 8px,transparent 8px 16px);border-radius:12px}
+.cday ul,.cdetail ul{list-style:none;margin:0;padding:0;flex:1}.cnone{color:var(--mute);font-size:.82rem;padding-top:2px;opacity:.7}
+.ce{display:flex;gap:9px;align-items:flex-start;padding:2px 0}.ce .cd{width:11px;height:11px;border-radius:50%;margin-top:6px;flex:none;background:var(--orange);border:1.5px solid var(--char)}
+.ce.k-trip .cd{background:var(--maths)}.ce.k-due .cd{background:var(--writing)}.ce.k-holiday .cd{background:#bdb6a8}
+.ce .ct{font-size:.78rem;color:var(--mute);font-weight:600;margin-left:4px}.ce .ck{display:inline-block;margin-left:8px;font-size:.66rem;font-weight:800;text-transform:uppercase;letter-spacing:.05em;background:var(--char);color:var(--cream);border-radius:99px;padding:1px 8px;vertical-align:middle}
+.ce .cn{font-size:.85rem;color:#4a443a;margin-top:1px}
+.cmh{display:flex;align-items:center;gap:8px;margin-bottom:10px}.cmh b{flex:1;text-align:center;font-size:1.15rem;font-weight:800}
+.cgrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}.cdw{font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;text-align:center;color:var(--mute);padding:2px 0}
+.cc{background:#fff;border:1.5px solid rgba(27,27,27,.18);border-radius:10px;min-height:86px;padding:4px 5px;text-align:left;font:inherit;color:var(--char);cursor:pointer;display:flex;flex-direction:column;gap:2px;overflow:hidden}
+.cc.out{opacity:.45}.cc.we{background:#f4eee0}.cc.off{background:repeating-linear-gradient(45deg,#ece5d6 0 6px,#f4eee0 6px 12px)}
+.cc.today{border:2.5px solid var(--orange)}.cc.sel{outline:3px solid var(--char);outline-offset:-1px}
+.cnum{font-weight:800;font-size:.8rem}.cc.today .cnum{background:var(--orange);color:#fff;border-radius:99px;padding:0 7px;align-self:flex-start}
+.cchip{display:block;font-size:.68rem;font-weight:700;line-height:1.25;border-radius:6px;padding:1px 5px;background:#ffd0c2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cchip.k-trip{background:var(--maths)}.cchip.k-due{background:var(--writing)}.cchip.k-holiday{background:#d8d2c4}.cmore{font-size:.66rem;color:var(--mute);font-weight:700}
+.cdetail{margin-top:14px;padding-top:10px;border-top:2px solid var(--char)}.cdetail h4{margin:0 0 6px}
+@media(max-width:700px){.cc{min-height:54px}.cchip{font-size:0;height:7px;padding:0;margin-top:1px}.cmore{display:none}.cday{gap:8px}.cday .cdl{width:54px}}
+@media print{.dnotice{border:2px solid #000}}
+.dh2 .dmore{float:right;font-size:.85rem;font-weight:800;color:var(--char);background:var(--cream);border-radius:99px;padding:4px 14px;text-decoration:none}
+/* calendar inside the dark student/parent dashboard */
+.dash .cweek,.dash .cweek *,.dash .cmon,.dash .cmon *{color:var(--char)}
+.dash .cweek h3 small,.dash .ce .ct,.dash .cnone,.dash .cdl span,.dash .cdw,.dash .cmore,.dash .cdetail .mute{color:var(--mute)}
+.dash .ce .cn{color:#4a443a}.dash .ce .ck{color:var(--cream)}.dash .cday.today .cdl b::after{color:var(--orange-d)}
+.dash .cc.today .cnum{color:#fff}

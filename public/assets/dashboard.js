@@ -11,6 +11,7 @@
     Inbox: P('<path d="M4 13l2-8h12l2 8v6H4z"/><path d="M4 13h5l1 2h4l1-2h5"/>'),
     home: P('<path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z"/>'), learn: P('<path d="M12 4l9 4.500-9 4.500-9-4.500z"/><path d="M7 11v5c0 1.500 2.500 3 5 3s5-1.500 5-3v-5"/>'),
     bulb: P('<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.500 10.900c.6.500 1 1.200 1 2.100h5c0-.9.400-1.600 1-2.100A6 6 0 0 0 12 3z"/>'),
+    cal: P('<rect x="3.500" y="5" width="17" height="15" rx="2.500"/><path d="M8 3v4M16 3v4M3.500 10h17"/>'),
     chart: P('<path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/>'),
     dl: P('<path d="M12 4v11M7 11l5 5 5-5M5 20h14"/>'), print: P('<path d="M7 9V3h10v6M7 17H4v-7h16v7h-3M7 14h10v7H7z"/>'), grid: P('<path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/>'), out: P('<path d="M9 4H5v16h4M16 8l4 4-4 4M20 12H9"/>')
   };
@@ -22,10 +23,11 @@
     const cnt = (s) => items.filter((i) => i.subject === s).length;
     const rep = reps[0];
     const closing = d.class && d.class.closed ? `<div class="dclosed"><b>This school year's portfolio has finished.</b> ${d.class.familyUntil ? 'You can keep viewing and downloading until <b>' + esc(fmtDate(d.class.familyUntil)) + '</b>. ' : ''}Please download ${esc(name)}'s work to keep.</div>` : '';
-    const nav = [['home', 'home', 'My Portfolio'], ['learn', 'learn', 'My Learning'], ['bulb', 'ideas', rep && o.who === 'family' ? 'Ideas for home' : 'Next steps']].concat(subs.map((s) => [s, 's:' + s, s]));
+    const cal = d.calendar || { events: [], notice: {} };
+    const nav = [['home', 'home', 'My Portfolio'], ['cal', 'calendar', 'Calendar'], ['learn', 'learn', 'My Learning'], ['bulb', 'ideas', rep && o.who === 'family' ? 'Ideas for home' : 'Next steps']].concat(subs.map((s) => [s, 's:' + s, s]));
     const kia = o.who === 'student' ? 'Kia ora,' : 'Kia ora, whānau of';
     root.innerHTML = `${closing}<div class="dash"><div class="dtop"><span class="dlogo">${svg('logo')}</span><b>${esc(CFG.className)} Portfolio</b><span class="grow"></span>
-        <button class="dib" data-go="home" aria-label="Home">${ICON.home}</button><button class="dib" data-go="learn" aria-label="My learning">${ICON.learn}</button><button class="dib" data-go="work" aria-label="All work">${ICON.grid}</button><button class="dib" id="dprint" aria-label="Print summary">${ICON.print}</button>
+        <button class="dib" data-go="home" aria-label="Home">${ICON.home}</button><button class="dib" data-go="calendar" aria-label="Calendar">${ICON.cal}</button><button class="dib" data-go="learn" aria-label="My learning">${ICON.learn}</button><button class="dib" data-go="work" aria-label="All work">${ICON.grid}</button><button class="dib" id="dprint" aria-label="Print summary">${ICON.print}</button>
         ${o.onDone ? `<button class="dib done" id="ddone">${ICON.out}<span>I'm done</span></button>` : ''}</div>
       <div class="dhero"><span class="dav" style="--c:${avColor(d.student.id)}">${esc(initials(d.student.name))}</span><div><div class="dk">${kia}</div><h1>${esc(name)}</h1><div class="dm">${items.length} piece${items.length === 1 ? '' : 's'} of learning</div></div></div>
       <div class="dbody"><nav class="dside" aria-label="Sections">${nav.map(([ic, k, l]) => `<button data-go="${k}">${ICON[ic] || ICON.grid}<span>${l}</span>${k.startsWith('s:') ? `<i>${cnt(k.slice(2))}</i>` : ''}</button>`).join('')}
@@ -44,6 +46,11 @@
         if (!list.length) box.outerHTML = `<div class="card dcard dempty"><img src="/assets/art/empty-camera.png" alt=""><div><h3>Nothing here yet</h3><p>${esc((o.pfOpts && o.pfOpts.emptyText) || 'Work will appear here once it has been saved.')}</p></div></div>`;
         else list.forEach((it) => box.appendChild(workCard(it, Object.assign({}, o.pfOpts, { onChange: (n, old) => { if (!n) items.splice(items.indexOf(old), 1); show('home'); } }))));
         if (rep) { const hi = (rep.data.celebrate || [])[0] || rep.data.overview; if (hi) main.insertAdjacentHTML('afterbegin', `<div class="dnote"><img src="/assets/art/sticker-trophy.png" alt=""><b>${esc(CP.fill(hi, name))}</b><a href="#learn" data-go="learn">Read ${esc(name)}'s learning summary →</a></div>`); }
+        main.insertAdjacentHTML('afterbegin', `${CP.cal.notice(cal)}<h2 class="dh2" style="margin-top:0">Coming up<a href="#calendar" data-go="calendar" class="dmore">Full calendar →</a></h2>${CP.cal.schedule(cal)}`);
+      },
+      calendar() {
+        main.innerHTML = `${CP.cal.notice(cal)}<h2 class="dh2">The next two weeks</h2>${CP.cal.schedule(cal)}<h2 class="dh2">Term calendar</h2><div class="card dcard" id="dcal"></div>`;
+        CP.cal.month(main.querySelector('#dcal'), cal);
       },
       learn() {
         let h = '';

@@ -115,3 +115,13 @@ Existing folders in `Class_Tracking` are not imported.
 - Summaries are **private until you tick "Share with family"**. Private teacher notes and checklist suggestions are never shown to families. Checklist progress bars on the family page are off by default (Close class page → "What families see").
 - Edit `reportContext` in `public/assets/config.js` to describe your school/curriculum for Claude.
 - The old tracker's habits, e-asTTle and test-entry features were not carried over.
+
+## Manage files & bucket folders
+- **Roster → Bucket folder** shows each child's folder in the R2 bucket (`<id>/`). It is a random ID so names never appear in the bucket. A folder appears once the child has their first file.
+- **Manage files** tab lists every stored file with filters (child, subject, dates, title search). Tick items and *Delete selected* removes them from the portfolio and from R2 together. Don't delete straight in the Cloudflare bucket view, or the portfolio will list broken items.
+
+## Calendar & teacher notice
+- **Calendar** tab in the hub: add events (date, optional last day, time, type, details). Types: Event, Trip / outing, Due / bring, No school.
+- Every student and family page gets a **Calendar** section (two-week schedule plus a month grid) and a "Coming up" block on the home page. The two weeks are worked out from today's date, so they update by themselves. On Saturday and Sunday they roll forward to the coming two weeks.
+- **Teacher notice**: free text shown in a yellow box at the top of every student and parent page. Clear it to hide it.
+- Events and the notice are removed by "Delete everything & start fresh". The tables are created automatically.

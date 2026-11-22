@@ -15,12 +15,13 @@
 <script src="/assets/qrcode.js"></script>
 <script src="/assets/common.js"></script>
 <script src="/assets/progress.js"></script>
+<script src="/assets/calendar.js"></script>
 </head>
 <body>
 <header class="top"><div class="in">
   <a class="brand" href="#/"><span class="logo" id="logo"></span><span><b id="bn"></b><small id="bs"></small></span></a>
   <nav class="nav" aria-label="Main">
-    <a href="#/" data-r="home" id="n1"></a><a href="#/progress" data-r="progress" id="n5"></a><a href="#/roster" data-r="roster" id="n2"></a><a href="#/files" data-r="files" id="n7"></a><a href="#/print" data-r="print" id="n3"></a><a href="#/apps" data-r="apps" id="n4"></a><a href="#/class" data-r="class" id="n6"></a>
+    <a href="#/" data-r="home" id="n1"></a><a href="#/progress" data-r="progress" id="n5"></a><a href="#/roster" data-r="roster" id="n2"></a><a href="#/files" data-r="files" id="n7"></a><a href="#/calendar" data-r="calendar" id="n8"></a><a href="#/print" data-r="print" id="n3"></a><a href="#/apps" data-r="apps" id="n4"></a><a href="#/class" data-r="class" id="n6"></a>
     <button id="out"></button>
   </nav>
 </div></header>
@@ -39,7 +40,7 @@ $('#logo').innerHTML = svg('logo');
 $('#bn').textContent = CFG.className + ' Portfolio';
 $('#bs').textContent = 'Teacher hub';
 document.title = CFG.className + ' · Teacher hub';
-$('#n1').innerHTML = svg('home') + 'Class'; $('#n5').innerHTML = svg('result') + 'Progress'; $('#n2').innerHTML = svg('users') + 'Roster'; $('#n7').innerHTML = svg('cloud') + 'Manage files'; $('#n3').innerHTML = svg('qr') + 'Print'; $('#n4').innerHTML = svg('plug') + 'Connect apps'; $('#n6').innerHTML = svg('key') + 'Close class';
+$('#n1').innerHTML = svg('home') + 'Class'; $('#n5').innerHTML = svg('result') + 'Progress'; $('#n2').innerHTML = svg('users') + 'Roster'; $('#n7').innerHTML = svg('cloud') + 'Manage files'; $('#n8').innerHTML = svg('cal') + 'Calendar'; $('#n3').innerHTML = svg('qr') + 'Print'; $('#n4').innerHTML = svg('plug') + 'Connect apps'; $('#n6').innerHTML = svg('key') + 'Close class';
 $('#out').innerHTML = svg('out') + 'Sign out';
 $('#out').onclick = () => { store.del('cp_t'); location.href = '/'; };
 
@@ -62,6 +63,7 @@ async function route() {
     if (h[0] === 's' && h[1]) { setNav('home'); await studentView(h[1], h[2]); }
     else if (h[0] === 'roster') { setNav('roster'); await rosterView(); }
     else if (h[0] === 'progress') { setNav('progress'); await progressOverview(); }
+    else if (h[0] === 'calendar') { setNav('calendar'); await calendarView(); }
     else if (h[0] === 'files') { setNav('files'); await filesView(); }
     else if (h[0] === 'print') { setNav('print'); await printView(h[1]); }
     else if (h[0] === 'apps') { setNav('apps'); appsView(); }
@@ -294,6 +296,59 @@ function qrModal(s) {
   document.body.appendChild(m);
 }
 
+/* ---------------- calendar & notice ---------------- */
+async function calendarView() {
+  let cal = await call('calendar');
+  const K = CP.cal.KINDS;
+  app.innerHTML = `<h2 style="margin:0 0 4px">Calendar & notices</h2><p class="mute small" style="color:var(--cream)">Whatever you add here appears on every student and family page, and the two-week schedule updates by itself.</p>
+    <div class="card gap"><h3 style="margin:0 0 4px">Teacher notice</h3><p class="small mute" style="margin:0 0 8px">Shown at the top of every student and parent page. Write anything: reminders, hat days, library day, a thank-you. Leave it empty to hide it.</p>
+      <textarea id="nt" rows="4" maxlength="2000" placeholder="e.g. Please send a named water bottle and sunhat every day this week. Thank you for helping with camp forms!"></textarea>
+      <div class="row gap" style="margin-top:8px"><button class="btn pri" id="nsave">Save notice</button><button class="btn" id="nclr">Clear</button><span id="nst" class="small mute"></span></div></div>
+    <div class="grid c2 gap" style="align-items:start">
+      <div class="card"><div id="mcal"></div></div>
+      <div class="card"><h3 id="fh" style="margin:0 0 8px">Add an event</h3>
+        <div class="grid c2"><label class="small" style="font-weight:700">Date<input type="date" id="ed"></label><label class="small" style="font-weight:700">Last day (optional)<input type="date" id="ee"></label></div>
+        <label class="small" style="font-weight:700;display:block;margin-top:8px">What's happening<input type="text" id="et" maxlength="120" placeholder="e.g. Swimming sports"></label>
+        <div class="grid c2" style="margin-top:8px"><label class="small" style="font-weight:700">Type<select id="ek">${Object.entries(K).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label><label class="small" style="font-weight:700">Time (optional)<input type="text" id="etm" maxlength="30" placeholder="e.g. 9:00 am"></label></div>
+        <label class="small" style="font-weight:700;display:block;margin-top:8px">Details for parents (optional)<textarea id="en" rows="3" maxlength="500" placeholder="What to bring, where to meet, cost…"></textarea></label>
+        <div class="row gap" style="margin-top:10px;flex-wrap:wrap"><button class="btn pri" id="esave">Add event</button><button class="btn" id="ecancel" hidden>Cancel</button><button class="btn danger" id="edel" hidden>Delete</button></div>
+        <p class="small mute" style="margin:8px 0 0">Tip: click a day on the calendar to fill in the date, or click an event to edit it.</p></div></div>
+    <h3 class="gap" style="color:var(--cream)">What families will see over the next two weeks</h3><div id="prev"></div>
+    <h3 class="gap" style="color:var(--cream)">All upcoming events</h3><div class="card" id="upl"></div>`;
+  $('#nt').value = cal.notice.text || '';
+  let editing = null;
+  const mc = CP.cal.month($('#mcal'), () => cal, { onPick: (d) => { if (!editing) $('#ed').value = d; }, onEvent: (e) => edit(e) });
+  $('#ed').value = CP.cal.ymd(new Date());
+  const reset = () => { editing = null; $('#fh').textContent = 'Add an event'; $('#esave').textContent = 'Add event'; ['ee', 'et', 'etm', 'en'].forEach((i) => ($('#' + i).value = '')); $('#ek').value = 'event'; $('#ecancel').hidden = $('#edel').hidden = true; };
+  function edit(e) {
+    if (!e) return; editing = e.id; $('#fh').textContent = 'Edit event'; $('#esave').textContent = 'Save changes';
+    $('#ed').value = e.date; $('#ee').value = e.endDate || ''; $('#et').value = e.title; $('#ek').value = e.kind; $('#etm').value = e.time || ''; $('#en').value = e.note || '';
+    $('#ecancel').hidden = $('#edel').hidden = false; $('#et').focus(); $('#fh').scrollIntoView({ block: 'nearest' });
+  }
+  const refresh = () => {
+    mc.redraw(); $('#prev').innerHTML = CP.cal.notice(cal) + CP.cal.schedule(cal);
+    const up = CP.cal.upcomingList(cal);
+    $('#upl').innerHTML = up.length ? `<table><thead><tr><th>When</th><th>What</th><th>Type</th><th></th></tr></thead><tbody>${up.map((e) => `<tr><td class="small" style="white-space:nowrap">${esc(CP.cal.range(e))}${e.time ? '<br><span class="mute">' + esc(e.time) + '</span>' : ''}</td><td><b>${esc(e.title)}</b>${e.note ? '<div class="small mute">' + esc(e.note) + '</div>' : ''}</td><td class="small">${esc(K[e.kind])}</td><td style="white-space:nowrap"><button class="btn sm" data-ed="${e.id}">Edit</button> <button class="btn sm danger" data-rm="${e.id}" aria-label="Delete ${esc(e.title)}">${svg('trash')}</button></td></tr>`).join('')}</tbody></table>` : '<p class="mute">No upcoming events yet. Add one above.</p>';
+    $$('[data-ed]', $('#upl')).forEach((b) => (b.onclick = () => edit(cal.events.find((e) => e.id === b.dataset.ed))));
+    $$('[data-rm]', $('#upl')).forEach((b) => (b.onclick = () => rm(b.dataset.rm)));
+  };
+  async function rm(id) { const e = cal.events.find((x) => x.id === id); if (!e || !confirm('Delete "' + e.title + '"?')) return; try { cal = await call('events/' + id, { method: 'DELETE' }); reset(); toast('Deleted'); refresh(); } catch (x) { toast(x.message); } }
+  $('#esave').onclick = async () => {
+    const body = { date: $('#ed').value, endDate: $('#ee').value || null, title: $('#et').value, kind: $('#ek').value, time: $('#etm').value, note: $('#en').value };
+    try {
+      cal = await call(editing ? 'events/' + editing : 'events', { method: editing ? 'PATCH' : 'POST', body });
+      toast(editing ? 'Saved' : 'Event added'); const d = body.date; reset(); $('#ed').value = d; $('#et').value = '';
+      mc.select(d); refresh();
+    } catch (x) { toast(x.message); }
+  };
+  $('#ecancel').onclick = () => { reset(); };
+  $('#edel').onclick = () => editing && rm(editing);
+  const saveNotice = async (text) => { try { cal = await call('notice', { method: 'PUT', body: { text } }); $('#nst').textContent = text ? 'Saved. Families can see it now.' : 'Notice cleared.'; refresh(); } catch (x) { toast(x.message); } };
+  $('#nsave').onclick = () => saveNotice($('#nt').value);
+  $('#nclr').onclick = () => { $('#nt').value = ''; saveNotice(''); };
+  refresh();
+}
+
 /* ---------------- manage files ---------------- */
 async function filesView() {
   await loadStudents();
@@ -387,16 +442,16 @@ async function rosterView() {
       <div class="card"><h3>Add students</h3><p class="mute small">One name per line. Each student gets a personal login code and a private family QR code automatically.</p>
         <textarea id="names" aria-label="Names" placeholder="Ava Smith&#10;Ben Jones&#10;…"></textarea><div class="row gap"><label class="small row" style="margin:0;font-weight:700">Year level <select id="nyear" style="width:auto"><option value="">—</option>${[4, 5, 6].map((v) => `<option>${v}</option>`).join('')}</select></label><button class="btn pri" id="addb">${svg('plus')} Add to class</button></div>
         <div class="row gap" style="margin-top:10px"><button class="btn sm" id="demob" title="Creates a pretend child with sample work, results and ticks so you can try the Claude analysis">${svg('plus')} Add demo student</button><span class="small mute">Pretend child for testing. Delete them with the bin when done.</span></div></div>
-      <div class="card"><h3>How access works</h3><p class="small"><b>Student code</b> — six characters, typed once on a shared iPad. Lets a student save and view their own work only.</p><p class="small"><b>Family QR</b> — a long private link, read-only, one child. If a card is lost or shared, press <i>New family QR</i> and the old one stops working straight away.</p><p class="small"><b>Year level</b> picks which curriculum statements appear on the Progress page. <b>Pronoun</b> is only used so Claude writes the summary correctly.</p></div>
+      <div class="card"><h3>How access works</h3><p class="small"><b>Student code</b> — six characters, typed once on a shared iPad. Lets a student save and view their own work only.</p><p class="small"><b>Family QR</b> — a long private link, read-only, one child. If a card is lost or shared, press <i>New family QR</i> and the old one stops working straight away.</p><p class="small"><b>Year level</b> picks which curriculum statements appear on the Progress page. <b>Sex</b> is only used so Claude writes the summary with the right pronouns.</p></div>
     </div>
-    <div class="card gap" style="padding:8px 12px;overflow:auto"><table><thead><tr><th>Name</th><th>Year</th><th>Pronoun</th><th>Student code</th><th>Family link</th><th>Bucket folder</th><th>Work</th><th></th></tr></thead><tbody id="tb"></tbody></table></div>`;
+    <div class="card gap" style="padding:8px 12px;overflow:auto"><table><thead><tr><th>Name</th><th>Year</th><th>Sex</th><th>Student code</th><th>Family link</th><th>Bucket folder</th><th>Work</th><th></th></tr></thead><tbody id="tb"></tbody></table></div>`;
   const tb = $('#tb');
   if (!students.length) tb.innerHTML = '<tr><td colspan="8" class="mute">No students yet.</td></tr>';
   students.forEach((s) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `<td><input type="text" value="${esc(s.name)}" aria-label="Name" maxlength="60"></td>
       <td><select data-f="year" aria-label="Year level" style="width:auto"><option value="">–</option>${[4, 5, 6].map((v) => `<option ${v === s.year ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
-      <td><select data-f="pron" aria-label="Pronoun" style="width:auto"><option value="">–</option>${[['he', 'he/him'], ['she', 'she/her'], ['they', 'they/them']].map(([v, l]) => `<option value="${v}" ${v === s.pron ? 'selected' : ''}>${l}</option>`).join('')}</select></td>
+      <td><select data-f="pron" aria-label="Sex" style="width:auto"><option value="">–</option>${[['he', 'Male'], ['she', 'Female']].map(([v, l]) => `<option value="${v}" ${v === s.pron ? 'selected' : ''}>${l}</option>`).join('')}</select></td>
       <td><code class="k">${fmtCode(s.code)}</code> <button class="btn sm" data-a="nc" title="Make a new code">New</button></td>
       <td><button class="btn sm" data-a="cl">${svg('copy')} Copy</button> <button class="btn sm" data-a="nf" title="Old QR stops working">New family QR</button></td><td><code class="k" title="In the R2 bucket this child's files are in this folder">${esc(s.id)}/</code> <button class="btn sm" data-a="cf" title="Copy folder name">${svg('copy')}</button></td><td>${s.total}</td><td><button class="btn sm danger" data-a="del" aria-label="Delete ${esc(s.name)}">${svg('trash')}</button></td>`;
     $('input', tr).onchange = async (e) => { try { await call('students/' + s.id, { method: 'PATCH', body: { name: e.target.value } }); toast('Name saved'); } catch (x) { toast(x.message); } };
