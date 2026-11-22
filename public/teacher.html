@@ -20,7 +20,7 @@
 <header class="top"><div class="in">
   <a class="brand" href="#/"><span class="logo" id="logo"></span><span><b id="bn"></b><small id="bs"></small></span></a>
   <nav class="nav" aria-label="Main">
-    <a href="#/" data-r="home" id="n1"></a><a href="#/progress" data-r="progress" id="n5"></a><a href="#/roster" data-r="roster" id="n2"></a><a href="#/print" data-r="print" id="n3"></a><a href="#/apps" data-r="apps" id="n4"></a><a href="#/class" data-r="class" id="n6"></a>
+    <a href="#/" data-r="home" id="n1"></a><a href="#/progress" data-r="progress" id="n5"></a><a href="#/roster" data-r="roster" id="n2"></a><a href="#/files" data-r="files" id="n7"></a><a href="#/print" data-r="print" id="n3"></a><a href="#/apps" data-r="apps" id="n4"></a><a href="#/class" data-r="class" id="n6"></a>
     <button id="out"></button>
   </nav>
 </div></header>
@@ -39,7 +39,7 @@ $('#logo').innerHTML = svg('logo');
 $('#bn').textContent = CFG.className + ' Portfolio';
 $('#bs').textContent = 'Teacher hub';
 document.title = CFG.className + ' · Teacher hub';
-$('#n1').innerHTML = svg('home') + 'Class'; $('#n5').innerHTML = svg('result') + 'Progress'; $('#n2').innerHTML = svg('users') + 'Roster'; $('#n3').innerHTML = svg('qr') + 'Print'; $('#n4').innerHTML = svg('plug') + 'Connect apps'; $('#n6').innerHTML = svg('key') + 'Close class';
+$('#n1').innerHTML = svg('home') + 'Class'; $('#n5').innerHTML = svg('result') + 'Progress'; $('#n2').innerHTML = svg('users') + 'Roster'; $('#n7').innerHTML = svg('cloud') + 'Manage files'; $('#n3').innerHTML = svg('qr') + 'Print'; $('#n4').innerHTML = svg('plug') + 'Connect apps'; $('#n6').innerHTML = svg('key') + 'Close class';
 $('#out').innerHTML = svg('out') + 'Sign out';
 $('#out').onclick = () => { store.del('cp_t'); location.href = '/'; };
 
@@ -62,6 +62,7 @@ async function route() {
     if (h[0] === 's' && h[1]) { setNav('home'); await studentView(h[1], h[2]); }
     else if (h[0] === 'roster') { setNav('roster'); await rosterView(); }
     else if (h[0] === 'progress') { setNav('progress'); await progressOverview(); }
+    else if (h[0] === 'files') { setNav('files'); await filesView(); }
     else if (h[0] === 'print') { setNav('print'); await printView(h[1]); }
     else if (h[0] === 'apps') { setNav('apps'); appsView(); }
     else if (h[0] === 'class') { setNav('class'); await classView(); }
@@ -293,31 +294,118 @@ function qrModal(s) {
   document.body.appendChild(m);
 }
 
+/* ---------------- manage files ---------------- */
+async function filesView() {
+  await loadStudents();
+  const items = (await call('files')).items;
+  const nm = {}; students.forEach((s) => (nm[s.id] = s.name));
+  const f = { st: '', sub: '', from: '', to: '', q: '' };
+  const sel = new Set();
+  app.innerHTML = `<h2 style="margin:0 0 4px">Manage files</h2><p class="mute small">Everything stored in the bucket. Tick items and delete them: they are removed from the portfolio <b>and</b> from R2 together.</p>
+    <div class="card gap"><div class="row gap" style="flex-wrap:wrap;align-items:flex-end">
+      <label class="small" style="margin:0;font-weight:700">Child<br><select id="fst"><option value="">All children</option>${students.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></label>
+      <label class="small" style="margin:0;font-weight:700">Subject<br><select id="fsub"><option value="">All</option>${['Maths', 'Reading', 'Writing', 'Topic', 'Inbox'].map((x) => `<option>${x}</option>`).join('')}</select></label>
+      <label class="small" style="margin:0;font-weight:700">From<br><input type="date" id="ffrom"></label>
+      <label class="small" style="margin:0;font-weight:700">To<br><input type="date" id="fto"></label>
+      <label class="small grow" style="margin:0;font-weight:700">Search title<br><input type="text" id="fq" placeholder="e.g. fractions"></label>
+    </div></div>
+    <div class="row gap noprint" style="margin:10px 0;flex-wrap:wrap"><label class="row" style="margin:0;font-weight:700"><input type="checkbox" id="fall"> Select all shown</label><span id="fsum" class="small grow" style="color:var(--cream);font-weight:700"></span><button class="btn danger" id="fdel" disabled>${svg('trash')} Delete selected</button></div>
+    <div class="card" style="padding:8px 12px;overflow:auto"><table><thead><tr><th></th><th>Title</th><th>Child</th><th>Subject</th><th>Type</th><th>Size</th><th>Date</th><th>Folder / file</th></tr></thead><tbody id="ftb"></tbody></table></div>`;
+  const shown = () => items.filter((it) => (!f.st || it.studentId === f.st) && (!f.sub || it.subject === f.sub)
+    && (!f.from || it.createdAt >= new Date(f.from + 'T00:00:00').getTime()) && (!f.to || it.createdAt <= new Date(f.to + 'T23:59:59').getTime())
+    && (!f.q || (it.title || '').toLowerCase().includes(f.q.toLowerCase())));
+  const draw = () => {
+    const list = shown();
+    $('#ftb').innerHTML = list.length ? list.map((it) => `<tr><td><input type="checkbox" data-id="${it.id}" ${sel.has(it.id) ? 'checked' : ''} aria-label="Select ${esc(it.title)}"></td>
+      <td><a href="${it.url}" target="_blank" rel="noopener">${esc(it.title)}</a></td><td>${esc(nm[it.studentId] || '(removed)')}</td><td>${esc(it.subject)}</td><td class="small mute">${esc(it.kind)}</td><td class="small">${CP.fmtSize(it.size)}</td><td class="small">${fmtDate(it.createdAt)}</td><td><code class="k small">${esc(it.studentId)}/${esc(it.id)}</code></td></tr>`).join('') : '<tr><td colspan="8" class="mute">Nothing matches.</td></tr>';
+    const bytes = list.reduce((n, i) => n + i.size, 0), sb = items.filter((i) => sel.has(i.id)).reduce((n, i) => n + i.size, 0);
+    $('#fsum').textContent = `${list.length} shown (${bytes ? CP.fmtSize(bytes) : "0 KB"}) · ${sel.size} selected${sel.size ? ' (' + CP.fmtSize(sb) + ')' : ''}`;
+    $('#fdel').disabled = !sel.size;
+    $('#fall').checked = list.length > 0 && list.every((i) => sel.has(i.id));
+  };
+  $('#ftb').onchange = (e) => { const id = e.target.dataset.id; if (!id) return; e.target.checked ? sel.add(id) : sel.delete(id); draw(); };
+  $('#fall').onchange = (e) => { shown().forEach((i) => (e.target.checked ? sel.add(i.id) : sel.delete(i.id))); draw(); };
+  [['fst', 'st'], ['fsub', 'sub'], ['ffrom', 'from'], ['fto', 'to'], ['fq', 'q']].forEach(([id, k]) => ($('#' + id).oninput = (e) => { f[k] = e.target.value; draw(); }));
+  $('#fdel').onclick = async () => {
+    const n = sel.size; if (!n) return;
+    if (!confirm(`Permanently delete ${n} file${n === 1 ? '' : 's'}? They are removed from the portfolio and the bucket. This cannot be undone.`)) return;
+    try {
+      const r = await call('files/delete', { method: 'POST', body: { ids: [...sel] } });
+      toast(r.deleted + ' deleted', 3000);
+      for (let i = items.length - 1; i >= 0; i--) if (sel.has(items[i].id)) items.splice(i, 1);
+      sel.clear(); draw();
+    } catch (x) { toast(x.message); }
+  };
+  draw();
+}
+
+/* ---------------- demo student (for testing) ---------------- */
+async function makeDemo() {
+  const made = (await call('students', { method: 'POST', body: { names: ['Demo Student (test)'], year: 5 } })).students[0];
+  await call('students/' + made.id, { method: 'PATCH', body: { pron: 'she' } });
+  const png = (title, sub, col) => new Promise((res) => {
+    const c = document.createElement('canvas'); c.width = 640; c.height = 440; const x = c.getContext('2d');
+    x.fillStyle = '#F5ECDC'; x.fillRect(0, 0, 640, 440); x.fillStyle = col; x.fillRect(0, 0, 640, 90);
+    x.fillStyle = '#fff'; x.font = 'bold 34px sans-serif'; x.fillText(title, 24, 58);
+    x.fillStyle = '#1B1B1B'; x.font = '24px sans-serif'; sub.forEach((l, i) => x.fillText(l, 24, 150 + i * 44));
+    c.toBlob(res, 'image/png');
+  });
+  let seq = 0; const DAY = 864e5;
+  const up = async (subject, title, mime, body, kind, note) => {
+    const q = new URLSearchParams({ student: made.id, subject, title, app: 'Demo', note: note || '', at: String(Date.now() - (30 - seq++ * 3) * DAY) }); if (kind) q.set('kind', kind);
+    if (kind === 'result') { const d = JSON.parse(body); q.set('meta', JSON.stringify({ score: d.score, total: d.total })); }
+    const r = await fetch('/api/upload?' + q, { method: 'POST', headers: { Authorization: 'Bearer ' + token(), 'Content-Type': mime }, body });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Upload failed');
+  };
+  const res = (title, _s, details) => JSON.stringify({ title, score: details.filter((d) => d.correct).length, total: details.length, details });
+  const qa = (arr) => arr.map(([q, a, ok]) => ({ q, answer: a, correct: ok }));
+  const J = 'application/json', T = 'text/plain';
+  await up('Maths', 'Fractions quiz', J, res('Fractions quiz', 6, qa([['1/2 + 1/4', '3/4', true], ['2/3 of 12', '8', true], ['Order: 1/2, 1/3, 3/4', '1/3, 1/2, 3/4', true], ['Equivalent to 2/5', '4/10', true], ['3/8 + 2/8', '5/16', false], ['1 - 3/5', '3/5', false], ['0.25 as a fraction', '1/4', true], ['5/10 simplified', '1/2', true]])), 'result', 'Quiz from the fractions unit');
+  await up('Maths', 'Times tables race', J, res('Times tables race', 17, qa([['7 x 8', '56', true], ['9 x 6', '54', true], ['12 x 4', '48', true], ['8 x 8', '64', true], ['6 x 7', '42', true], ['9 x 9', '81', true], ['11 x 7', '78', false], ['7 x 7', '49', true], ['12 x 12', '144', true], ['8 x 6', '46', false]])), 'result');
+  await up('Maths', 'Number line and decimals', 'image/png', await png('Decimals on a number line', ['0.1   0.25   0.5   0.75', 'Put 0.6 between 0.5 and 0.75', 'Rounded 3.47 to 3.5'], '#FF4A1C'), null, 'Photo of her maths book');
+  await up('Reading', 'The Wild Robot: chapter quiz', J, res('The Wild Robot: chapter quiz', 7, qa([['Why did Roz need to learn the animals\' language?', 'To get food', false], ['How did Roz learn to move quietly?', 'Watching the animals', true], ['What does the author want us to feel about Roz?', 'Sympathy', true], ['Find a word that shows Roz was determined', 'persistent', true], ['What happens first?', 'The storm', true], ['Who adopts Brightbill?', 'Roz', true], ['Why is the nest important?', 'Safe place', true], ['What does "survive" mean?', 'To stay alive', true], ['Main idea of ch.3', 'Roz is alone', false], ['Predict what Roz does next', 'Finds food', true]])), 'result');
+  await up('Reading', 'Reading response: how Roz changes', T, 'At the start of the book Roz is a machine who does not understand the island. I think the author wants us to feel sorry for her because she is all alone. Later Roz changes because she learns the animals\' language and acts like a mother to Brightbill. The text says she "watched and waited", which shows she is patient. I think the author is saying that you can change even if you were made for a different job.\n\nTeacher note: good use of a quote; needs a second piece of evidence.', null, 'Written response');
+  await up('Writing', 'Recount: Our class camp', T, 'On Friday our class went to camp at the lake. First we got on the bus and we sang songs. When we got there we put our bags in the cabins. Then we did archery and I hit the target twice. After lunch we went kayaking, my partner was Ben and we nearly tipped over. It was funny. At night we had a campfire and toasted marshmellows. I was tired but happy on the bus home and I want to go again.', null, 'First draft, timed 25 min');
+  await up('Writing', 'Persuasive plan: Should we have longer lunchtimes?', 'image/png', await png('Persuasive plan', ['Opinion: Yes, longer lunches', 'Reason 1: time to play and rest', 'Reason 2: better learning after', 'Counter-argument: less class time'], '#1B1B1B'), null, 'Planning page');
+  await up('Topic', 'Persia: Royal Road notes', T, 'The Royal Road was built by the Persian king Darius to join the empire together. It was about 2,700 km long and messengers on horses could carry a message in about 7 days. I think this was important because the king could rule far away places and traders could travel safely. The road also helped spread ideas. A source I used says there were stations every day\'s ride, and a second source agreed.', null, 'Research notes');
+  await up('Topic', 'Persia quiz', J, res('Persia quiz', 8, qa([['Who built the Royal Road?', 'Darius', true], ['How long was it?', 'About 2,700 km', true], ['Why were stations built?', 'Fresh horses', true], ['Name a Persian city', 'Persepolis', true], ['What was a satrap?', 'A governor', true], ['Which empire came first?', 'Greek', false], ['What did traders carry?', 'Spices and cloth', true], ['Who was Cyrus?', 'First Persian king', true], ['Why was the empire large?', 'Conquest', true], ['What religion did some Persians follow?', 'Zoroastrianism', false]])), 'result');
+  await up('Topic', 'Royal road poster', 'image/png', await png('The Royal Road', ['Susa  ->  Sardis', '2,700 km  |  7 days by relay', 'Why it mattered: trade + news'], '#FF4A1C'), null, 'Poster draft');
+  const ch = {};
+  for (const sub of CFG.subjects) {
+    const list = CP.listFor(sub, 5);
+    list.forEach((x, i) => { ch[x.key] = [2, 1, 2, 0][(i + sub.length) % 4]; });
+    ch['att|' + sub] = { Maths: 3, Reading: 4, Writing: 3, Topic: 4 }[sub] || 3;
+  }
+  await call(`students/${made.id}/checks`, { method: 'PUT', body: { changes: ch } });
+}
+
 /* ---------------- roster ---------------- */
 async function rosterView() {
   await loadStudents();
   app.innerHTML = `<h2>Roster</h2>
     <div class="grid c2">
       <div class="card"><h3>Add students</h3><p class="mute small">One name per line. Each student gets a personal login code and a private family QR code automatically.</p>
-        <textarea id="names" aria-label="Names" placeholder="Ava Smith&#10;Ben Jones&#10;…"></textarea><div class="row gap"><label class="small row" style="margin:0;font-weight:700">Year level <select id="nyear" style="width:auto"><option value="">—</option>${[4, 5, 6].map((v) => `<option>${v}</option>`).join('')}</select></label><button class="btn pri" id="addb">${svg('plus')} Add to class</button></div></div>
+        <textarea id="names" aria-label="Names" placeholder="Ava Smith&#10;Ben Jones&#10;…"></textarea><div class="row gap"><label class="small row" style="margin:0;font-weight:700">Year level <select id="nyear" style="width:auto"><option value="">—</option>${[4, 5, 6].map((v) => `<option>${v}</option>`).join('')}</select></label><button class="btn pri" id="addb">${svg('plus')} Add to class</button></div>
+        <div class="row gap" style="margin-top:10px"><button class="btn sm" id="demob" title="Creates a pretend child with sample work, results and ticks so you can try the Claude analysis">${svg('plus')} Add demo student</button><span class="small mute">Pretend child for testing. Delete them with the bin when done.</span></div></div>
       <div class="card"><h3>How access works</h3><p class="small"><b>Student code</b> — six characters, typed once on a shared iPad. Lets a student save and view their own work only.</p><p class="small"><b>Family QR</b> — a long private link, read-only, one child. If a card is lost or shared, press <i>New family QR</i> and the old one stops working straight away.</p><p class="small"><b>Year level</b> picks which curriculum statements appear on the Progress page. <b>Pronoun</b> is only used so Claude writes the summary correctly.</p></div>
     </div>
-    <div class="card gap" style="padding:8px 12px;overflow:auto"><table><thead><tr><th>Name</th><th>Year</th><th>Pronoun</th><th>Student code</th><th>Family link</th><th>Work</th><th></th></tr></thead><tbody id="tb"></tbody></table></div>`;
+    <div class="card gap" style="padding:8px 12px;overflow:auto"><table><thead><tr><th>Name</th><th>Year</th><th>Pronoun</th><th>Student code</th><th>Family link</th><th>Bucket folder</th><th>Work</th><th></th></tr></thead><tbody id="tb"></tbody></table></div>`;
   const tb = $('#tb');
-  if (!students.length) tb.innerHTML = '<tr><td colspan="7" class="mute">No students yet.</td></tr>';
+  if (!students.length) tb.innerHTML = '<tr><td colspan="8" class="mute">No students yet.</td></tr>';
   students.forEach((s) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `<td><input type="text" value="${esc(s.name)}" aria-label="Name" maxlength="60"></td>
       <td><select data-f="year" aria-label="Year level" style="width:auto"><option value="">–</option>${[4, 5, 6].map((v) => `<option ${v === s.year ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
       <td><select data-f="pron" aria-label="Pronoun" style="width:auto"><option value="">–</option>${[['he', 'he/him'], ['she', 'she/her'], ['they', 'they/them']].map(([v, l]) => `<option value="${v}" ${v === s.pron ? 'selected' : ''}>${l}</option>`).join('')}</select></td>
       <td><code class="k">${fmtCode(s.code)}</code> <button class="btn sm" data-a="nc" title="Make a new code">New</button></td>
-      <td><button class="btn sm" data-a="cl">${svg('copy')} Copy</button> <button class="btn sm" data-a="nf" title="Old QR stops working">New family QR</button></td><td>${s.total}</td><td><button class="btn sm danger" data-a="del" aria-label="Delete ${esc(s.name)}">${svg('trash')}</button></td>`;
+      <td><button class="btn sm" data-a="cl">${svg('copy')} Copy</button> <button class="btn sm" data-a="nf" title="Old QR stops working">New family QR</button></td><td><code class="k" title="In the R2 bucket this child's files are in this folder">${esc(s.id)}/</code> <button class="btn sm" data-a="cf" title="Copy folder name">${svg('copy')}</button></td><td>${s.total}</td><td><button class="btn sm danger" data-a="del" aria-label="Delete ${esc(s.name)}">${svg('trash')}</button></td>`;
     $('input', tr).onchange = async (e) => { try { await call('students/' + s.id, { method: 'PATCH', body: { name: e.target.value } }); toast('Name saved'); } catch (x) { toast(x.message); } };
     $$('select', tr).forEach((sel) => (sel.onchange = async () => { try { await call('students/' + s.id, { method: 'PATCH', body: { [sel.dataset.f]: sel.value } }); toast('Saved'); } catch (x) { toast(x.message); } }));
     tr.onclick = async (e) => {
       const a = e.target.closest('button')?.dataset.a; if (!a) return;
       try {
         if (a === 'cl') return copy(famUrl(s), 'Family link copied');
+        if (a === 'cf') return copy(s.id + '/', 'Folder name copied');
         if (a === 'nc') { if (!confirm(`Make a new login code for ${s.name}? Their old code stops working.`)) return; await call('students/' + s.id, { method: 'PATCH', body: { regenCode: true } }); }
         if (a === 'nf') { if (!confirm(`Make a new family QR for ${s.name}? The old QR/link stops working — you'll need to reprint it.`)) return; await call('students/' + s.id, { method: 'PATCH', body: { regenFamily: true } }); }
         if (a === 'del') { if (!confirm(`Delete ${s.name} and all ${s.total} pieces of their work? This cannot be undone.`)) return; await call('students/' + s.id, { method: 'DELETE' }); }
@@ -326,6 +414,7 @@ async function rosterView() {
     };
     tb.appendChild(tr);
   });
+  $('#demob').onclick = async (e) => { e.target.disabled = true; try { await makeDemo(); toast('Demo student added'); rosterView(); } catch (x) { toast(x.message); e.target.disabled = false; } };
   $('#addb').onclick = async () => {
     const names = $('#names').value.split(/\n/).map((x) => x.trim()).filter(Boolean);
     if (!names.length) return toast('Type or paste some names first');

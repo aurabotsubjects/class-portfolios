@@ -309,6 +309,27 @@ export async function onRequest({ request, env }) {
       await db.batch([db.prepare('DELETE FROM items WHERE student_id=?').bind(b), db.prepare('DELETE FROM checks WHERE student_id=?').bind(b), db.prepare('DELETE FROM reports WHERE student_id=?').bind(b), db.prepare('DELETE FROM students WHERE id=?').bind(b)]);
       return json({ ok: true, deleted: rows.length });
     }
+    // ----- manage files: list everything / bulk delete -----
+    if (a === 'files' && !b && m === 'GET') {
+      const rows = (await db.prepare('SELECT * FROM items ORDER BY created_at DESC').all()).results;
+      return json({ items: rows.map(itemOut) });
+    }
+    if (a === 'files' && b === 'delete' && m === 'POST') {
+      const p = await request.json().catch(() => ({}));
+      const ids = (Array.isArray(p.ids) ? p.ids : []).map(String).slice(0, 2000);
+      let deleted = 0;
+      for (let i = 0; i < ids.length; i += 50) {
+        const part = ids.slice(i, i + 50);
+        const q = part.map(() => '?').join(',');
+        const rows = (await db.prepare(`SELECT id,student_id FROM items WHERE id IN (${q})`).bind(...part).all()).results;
+        if (!rows.length) continue;
+        await env.FILES.delete(rows.map((r) => r.student_id + '/' + r.id));
+        await db.prepare(`DELETE FROM items WHERE id IN (${q})`).bind(...part).run();
+        deleted += rows.length;
+      }
+      return json({ ok: true, deleted });
+    }
+
     // ----- progress: checklist + reports -----
     if (a === 'students' && b && c === 'progress' && m === 'GET') {
       const st = await db.prepare('SELECT * FROM students WHERE id=?').bind(b).first();
@@ -428,7 +449,7 @@ async function upload(env, request, url, me) {
   await env.FILES.put(sid + '/' + id, buf, { httpMetadata: { contentType: mime } });
   const row = {
     id, student_id: sid, subject: normSubject(q.get('subject')), title, kind, app: clip(q.get('app'), 60) || null, mime, size: buf.byteLength,
-    note: clip(q.get('note'), 500) || null, teacher_comment: null, family_visible: 1, sent_by: me.role, created_at: Date.now(), meta,
+    note: clip(q.get('note'), 500) || null, teacher_comment: null, family_visible: 1, sent_by: me.role, created_at: (me.role === 'teacher' && /^\d{12,14}$/.test(q.get('at') || '') && Number(q.get('at')) <= Date.now()) ? Number(q.get('at')) : Date.now(), meta,
   };
   await db.prepare('INSERT INTO items(id,student_id,subject,title,kind,app,mime,size,note,teacher_comment,family_visible,sent_by,created_at,meta) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
     .bind(row.id, row.student_id, row.subject, row.title, row.kind, row.app, row.mime, row.size, row.note, null, 1, row.sent_by, row.created_at, row.meta).run();
