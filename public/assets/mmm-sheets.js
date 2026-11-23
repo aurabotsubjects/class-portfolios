@@ -121,6 +121,19 @@ body{font-family:Poppins,"Avenir Next","Helvetica Neue",Arial,sans-serif;color:#
 .bfc small{font-size:6pt;color:#8a8478;font-weight:700;line-height:1}
 .bfc b{font-size:10.5pt;font-weight:800;line-height:1.15}
 .bfc u{display:block;border-bottom:1.1pt solid #1b1b1b;height:4mm;text-decoration:none}
+.bfc i{display:block;font-style:normal;font-size:10pt;font-weight:800;color:#1b7a3a;border-bottom:1.1pt solid #1b1b1b;height:4mm;line-height:4mm}
+.pg.cov{padding:16mm 16mm 12mm;display:flex;flex-direction:column;gap:7mm}
+.cov .ct{background:#1b1b1b;color:#fff3e0;border-radius:6mm;padding:9mm 10mm;border-bottom:3mm solid #ff6a1a}
+.cov .ct small{display:block;font-weight:700;opacity:.75;font-size:10pt;letter-spacing:.06em;text-transform:uppercase}
+.cov .ct h1{margin:2mm 0 0;font-size:34pt;font-weight:900;letter-spacing:-.03em;line-height:1}
+.cov .who2{display:flex;align-items:baseline;gap:4mm;font-size:13pt;font-weight:700}
+.cov .who2 b{flex:1;border-bottom:1.2pt solid #1b1b1b;font-size:19pt;padding-bottom:1mm}
+.cov table{width:100%;border-collapse:collapse;font-size:11pt}
+.cov th{text-align:left;font-size:8.5pt;text-transform:uppercase;letter-spacing:.05em;color:#6b6459;padding:0 2mm 2mm}
+.cov td{border:1.2pt solid #1b1b1b;height:11.5mm;padding:0 3mm;font-weight:700}
+.cov td.w{width:28mm;background:#fff3e0}.cov td.d{width:34mm}.cov td.sc{width:42mm}.cov td.tm{width:36mm}
+.cov .tips{font-size:10.5pt;line-height:1.5;background:#fff3e0;border-radius:4mm;padding:4mm 6mm;margin-top:auto}
+.cov .foot2{display:flex;justify-content:space-between;font-size:8.5pt;color:#8a8478;font-weight:700}
 @media screen{body{background:#d9d4c8}.pg{margin:8px auto;box-shadow:0 2px 10px rgba(0,0,0,.25);background:#fff}}
 `;
   const artBase = () => location.origin + '/assets/art/';
@@ -179,14 +192,33 @@ body{font-family:Poppins,"Avenir Next","Helvetica Neue",Arial,sans-serif;color:#
   // ---------- Basic Facts worksheet (100 questions) ----------
   function bfQuestions(term, week) { const B = window.BASIC_FACTS_DATA || {}; return (B[term] && B[term][week]) || []; }
   const bfText = (q) => q.replace('x', '×').replace(/([+\-×÷])/g, ' $1 ');
-  function bfPages(items) { // items: [{term, week, name}]
+  function bfPages(items, withAns) { // items: [{term, week, name}]
     return items.map(({ term, week, name }) => {
       const qs = bfQuestions(term, week);
       if (!qs.length) return '';
-      return `<div class="pg bf"><div class="bfh"><div class="t">Basic Facts — Term ${term}, Week ${week}</div><div class="m">100 questions · 5 minutes</div></div>
+      return `<div class="pg bf"><div class="bfh"><div class="t">Basic Facts — Term ${term}, Week ${week}${withAns ? ' · ANSWERS' : ''}</div><div class="m">100 questions · 5 minutes</div></div>
         <div class="bfi"><span>Name: <span class="f">${esc(name || '')}</span></span><span>Date: <span class="f"></span></span><span>Score: <span class="f" style="min-width:18mm"></span> / 100</span></div>
-        <div class="bfg">${qs.map((q, i) => `<div class="bfc"><small>${i + 1}</small><b>${esc(bfText(q))} =</b><u></u></div>`).join('')}</div></div>`;
+        <div class="bfg">${qs.map((q, i) => `<div class="bfc"><small>${i + 1}</small><b>${esc(bfText(q))} =</b>${withAns ? `<i>${esc(String(bfSolve(q)))}</i>` : '<u></u>'}</div>`).join('')}</div></div>`;
     });
+  }
+  function bfCover(term, name, weeks) {
+    const cls = window.PORTFOLIO_CONFIG && window.PORTFOLIO_CONFIG.className || '';
+    return `<div class="pg cov"><div class="ct"><small>${esc(cls)} · Mad Maths Minute</small><h1>Basic Facts<br>Term ${term} pack</h1></div>
+      <div class="who2">Name <b>${esc(name || '')}</b></div>
+      <table><thead><tr><th>Test</th><th>Date</th><th>Score (out of 100)</th><th>Time</th></tr></thead><tbody>${weeks.map((w) => `<tr><td class="w">Week ${w}</td><td class="d"></td><td class="sc"></td><td class="tm"></td></tr>`).join('')}</tbody></table>
+      <div class="tips"><b>How it works:</b> do one test each week. Set a timer for 5 minutes, work as fast as you can, then mark it and write your score and time here. The goal is to get <b>more right</b> and to get them <b>faster</b>. Keep this pack in your tray — your teacher will tell you when to start the next week.</div>
+      <div class="foot2"><span>Basic Facts · Term ${term}</span><span>${weeks.length} tests</span></div></div>`;
+  }
+  // A whole term's tests, one pack per student (cover page + every week), then an optional answer key
+  function termPack(items, o = {}) {
+    const term = o.term, weeks = (o.weeks && o.weeks.length ? o.weeks : bfWeeks(term)).filter((w) => bfQuestions(term, w).length);
+    let out = [];
+    items.forEach(({ name }) => {
+      if (o.cover !== false) out.push(bfCover(term, name, weeks));
+      out = out.concat(bfPages(weeks.map((week) => ({ term, week, name }))));
+    });
+    if (o.answers) out = out.concat(bfPages(weeks.map((week) => ({ term, week, name: 'Answer key' })), true));
+    return out;
   }
   function bfSolve(q) {
     const m = /^(\d+)([+\-x÷])(\d+)$/.exec(q);
@@ -235,5 +267,5 @@ body{font-family:Poppins,"Avenir Next","Helvetica Neue",Arial,sans-serif;color:#
   const fmtDay = (d) => { if (!d) return '—'; const [y, m, dd] = d.split('-'); return `${+dd}/${+m}/${y}`; };
   const fmtTime = (s) => { const m = Math.floor(s / 60); return m > 0 ? `${m}m ${s % 60}s` : `${s}s`; };
 
-  window.MMM = { D, SKILLS, FIRST, LAST, BAND, parseQ, answer, qHtml, plain, testPages, practicePages, bfPages, bfQuestions, bfText, bfSolve, bfWeeks, openPrint, doc, scoreChart, fmtDay, fmtTime, bandOf, esc };
+  window.MMM = { D, SKILLS, FIRST, LAST, BAND, parseQ, answer, qHtml, plain, testPages, practicePages, bfPages, bfCover, termPack, bfQuestions, bfText, bfSolve, bfWeeks, openPrint, doc, scoreChart, fmtDay, fmtTime, bandOf, esc };
 })();
