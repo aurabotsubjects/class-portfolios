@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en-NZ">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Spelling</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="icon" href="/assets/art/favicon.png"><link rel="apple-touch-icon" href="/assets/art/icon-192.png">
+<link rel="stylesheet" href="/assets/style.css">
+<link rel="stylesheet" href="/assets/theme-bold.css">
+<script src="/assets/config.js"></script>
+<script src="/assets/qrcode.js"></script>
+<script src="/assets/common.js"></script>
+<script src="/assets/mmm-sheets.js"></script>
+<script src="/assets/spell-sheets.js"></script>
+<style>
+  .mstats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:0 0 16px}
+  .mstats .card{padding:14px 18px} .mstats b{font-size:2rem;font-weight:900;letter-spacing:-.04em;display:block;line-height:1}
+  .mbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .mbar .sep{width:1px;height:28px;background:rgba(27,27,27,.2)}
+  .mt{width:100%;border-collapse:separate;border-spacing:0 6px}
+  .mt th{font-size:.78rem;text-align:left;font-weight:700;color:var(--mute);padding:0 10px}
+  .mt td{background:#fff;padding:9px 10px;vertical-align:middle}
+  .mt td:first-child{border-radius:14px 0 0 14px;width:34px;text-align:center} .mt td:last-child{border-radius:0 14px 14px 0}
+  .mt tr.sel td{background:#fff3e0}
+  .nm{display:flex;align-items:center;gap:10px;font-weight:700;white-space:nowrap}
+  .av{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:.85rem;flex:none;background:var(--c)}
+  .lv{display:inline-block;border-radius:99px;padding:3px 12px;font-weight:800;font-size:.85rem;border:2px solid var(--char);background:var(--b,#fff);white-space:nowrap;cursor:pointer}
+  .lv.none{background:#ffe1d6;border-style:dashed}
+  .lv.bf{background:var(--char);color:var(--cream)}
+  .sc{width:62px;text-align:center;font-weight:800;font-size:1.05rem;padding:6px}
+  .sub{font-size:.8rem;color:var(--mute)}
+  .qrow{display:grid;grid-template-columns:130px 100px minmax(0,1fr) 78px 34px;gap:8px;align-items:center;margin:6px 0}
+  @media(max-width:760px){.mt .hide-s{display:none}.qrow{grid-template-columns:1fr 1fr}}
+  .qlist{max-height:240px;overflow:auto;border:2px solid rgba(27,27,27,.15);border-radius:12px;background:#fff;padding:6px 10px;margin-top:10px}
+  .qlist div{display:flex;gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid #eee;font-size:.92rem}
+  .hint{background:var(--writing);border-radius:14px;padding:10px 14px;font-size:.92rem;margin:0 0 14px}
+</style>
+</head>
+<body>
+<header class="top"><div class="in">
+  <a class="brand" href="/teacher.html#/"><span class="logo" id="logo"></span><span><b id="bn"></b><small id="bs"></small></span></a>
+  <nav class="nav" aria-label="Main">
+    <a href="/teacher.html#/" id="n1"></a><a href="/teacher.html#/roster" id="n2"></a><a href="/mmm.html" id="n9"></a><a href="/spelling.html" class="on" id="n10"></a>
+    <button id="out"></button>
+  </nav>
+</div></header>
+<main class="wrap" id="app"><p class="mute">Loading…</p></main>
+<script>
+const { $, $$, svg, esc, CFG, api, store, toast, avColor, initials, firstName } = CP;
+const token = () => store.get('cp_t');
+if (!token()) location.replace('/');
+$('#logo').innerHTML = svg('logo'); $('#bn').textContent = CFG.className + ' Portfolio'; $('#bs').textContent = 'Teacher hub';
+$('#n1').innerHTML = svg('home') + 'Class'; $('#n2').innerHTML = svg('users') + 'Roster'; $('#n9').innerHTML = svg('result') + 'Maths facts'; $('#n10').innerHTML = svg('result') + 'Spelling';
+$('#out').innerHTML = svg('out') + 'Sign out'; $('#out').onclick = () => { store.del('cp_t'); location.href = '/'; };
+document.title = CFG.className + ' · Spelling';
+async function call(path, o = {}) {
+  try { return await api(path, Object.assign({ token: token() }, o)); }
+  catch (e) { if (e.status === 401) { store.del('cp_t'); location.href = '/'; } throw e; }
+}
+const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Pacific/Auckland' });
+const fmtDay = (d) => window.MMM ? window.MMM.fmtDay(d) : d;
+let rows = [], lists = [], picked = new Set(), testDay = today();
+const app = $('#app');
+
+async function load() {
+  const [c, l] = await Promise.all([call('spell/class'), lists.length ? { lists } : call('spell/lists')]);
+  rows = c.students; lists = l.lists;
+  picked = new Set([...picked].filter((id) => rows.some((r) => r.id === id)));
+  draw();
+}
+const chip = (r) => !r.listId ? '<span class="lv none" data-lv>Not set</span>' : `<span class="lv" data-lv style="--b:#ffd9b0">${esc(r.label)}</span>`;
+const ticked = () => { const s = rows.filter((r) => picked.has(r.id)); if (!s.length) toast('Tick one or more students first'); return s; };
+const toItem = (r) => ({ name: r.name, label: r.label, week: r.week, words: r.words });
+
+function draw() {
+  if (!rows.length) { app.innerHTML = '<h2>Spelling</h2><div class="empty"><h3>No students yet</h3><p>Add your class on the Roster page first.</p><a class="btn pri" href="/teacher.html#/roster">Go to Roster</a></div>'; return; }
+  const set = rows.filter((r) => r.listId).length, none = rows.length - set;
+  const allOn = rows.every((r) => picked.has(r.id));
+  app.innerHTML = `<h2>Spelling <span style="font-weight:600;font-size:1rem;opacity:.85">weekly words &amp; paper tests</span></h2>
+    <div class="mstats"><div class="card"><b>${set}</b><span class="sub">students with a word list</span></div><div class="card"><b>${none}</b><span class="sub">list not set yet</span></div></div>
+    ${none ? `<div class="hint"><b>${none} student${none === 1 ? ' has' : 's have'} no word list yet.</b> Tap “Not set” (or tick them and press <i>Set list</i>).</div>` : ''}
+    <div class="card"><div class="mbar">
+      <label class="sub" for="day">Test date</label><input type="date" id="day" value="${testDay}" style="width:auto;padding:6px 10px">
+      <span class="sep"></span><button class="btn sm" id="lvl">Set list for ticked</button><span class="sep"></span>
+      <button class="btn pri sm" id="pAll">${svg('print')} Print whole class</button>
+      <button class="btn pri sm" id="pSel">${svg('print')} Print ticked</button>
+    </div>
+    <p class="sub" style="margin:8px 0 0">Forms print <b>five to a page</b> with each child's name, so you can cut them apart. The same form is the weekly practice sheet. After the test, press <b>Mark test</b> for a student and tick or cross each word from their paper.</p>
+    <table class="mt" style="margin-top:8px"><thead><tr><th><input type="checkbox" id="all" ${allOn ? 'checked' : ''} aria-label="Select all"></th><th>Student</th><th>List</th><th class="hide-s">This week's words</th><th class="hide-s">Last test</th><th></th></tr></thead><tbody>
+    ${rows.map((r) => `<tr data-id="${r.id}" class="${picked.has(r.id) ? 'sel' : ''}"><td><input type="checkbox" class="pk" ${picked.has(r.id) ? 'checked' : ''} aria-label="Select ${esc(r.name)}"></td>
+      <td><div class="nm"><span class="av" style="--c:${avColor(r.id)}">${esc(initials(r.name))}</span>${esc(r.name)}</div></td>
+      <td>${chip(r)}${r.listId ? `<div class="sub">Week ${r.week} · ${r.mastered}/${r.total} learned</div>` : ''}</td>
+      <td class="hide-s sub" style="max-width:320px">${r.finished ? 'All lists finished 🎉' : esc(r.words.join(', ')) || '—'}</td>
+      <td class="hide-s sub">${r.last ? `<b>${r.last.score}/${r.last.total}</b> · ${esc(fmtDay(r.last.day))}` : '—'}</td>
+      <td style="text-align:right;white-space:nowrap">${r.listId && !r.finished ? '<button class="btn pri sm mk">Mark test</button> ' : ''}<button class="btn sm hist">History</button></td></tr>`).join('')}
+    </tbody></table></div>`;
+  $('#day').onchange = (e) => { testDay = e.target.value || today(); };
+  $('#all').onchange = (e) => { picked = e.target.checked ? new Set(rows.map((r) => r.id)) : new Set(); draw(); };
+  $$('.pk').forEach((c) => (c.onchange = () => { const id = c.closest('tr').dataset.id; c.checked ? picked.add(id) : picked.delete(id); c.closest('tr').classList.toggle('sel', c.checked); }));
+  const rowOf = (el) => rows.find((r) => r.id === el.closest('tr').dataset.id);
+  $$('[data-lv]').forEach((b) => (b.onclick = () => listModal([rowOf(b)])));
+  $$('.mk').forEach((b) => (b.onclick = () => markModal(rowOf(b))));
+  $$('.hist').forEach((b) => (b.onclick = () => historyModal(rowOf(b))));
+  $('#lvl').onclick = () => { const s = ticked(); if (s.length) listModal(s); };
+  $('#pAll').onclick = () => printItems(rows);
+  $('#pSel').onclick = () => { const s = ticked(); if (s.length) printItems(s); };
+}
+function printItems(list) {
+  const items = list.filter((r) => r.listId && r.words.length).slice().sort((a, b) => a.name.localeCompare(b.name)).map(toItem);
+  if (!items.length) return toast('No students with words to print');
+  const skipped = list.length - items.length;
+  if (skipped) toast(skipped + ' student' + (skipped === 1 ? '' : 's') + ' without a list left out');
+  window.MMM.openPrint({ title: 'Spelling tests', pages: window.SPELL.testPages(items) });
+}
+function modal(html, wide) {
+  const m = document.createElement('div');
+  m.className = 'modal'; m.setAttribute('role', 'dialog'); m.setAttribute('aria-modal', 'true');
+  m.innerHTML = `<div class="card" style="width:min(${wide || 560}px,96vw);max-height:92vh;overflow:auto">${html}</div>`;
+  document.body.appendChild(m);
+  const close = () => m.remove();
+  m.addEventListener('click', (e) => { if (e.target === m) close(); });
+  return { m, close, $: (s) => m.querySelector(s), $$: (s) => [...m.querySelectorAll(s)] };
+}
+function listModal(list) {
+  const r0 = list[0], one = list.length === 1;
+  const w = modal(`<h3 style="margin-top:0">${one ? esc(r0.name) : list.length + ' students'} — word list</h3>
+    <label for="ls">Word list</label><select id="ls">${lists.map((l) => `<option value="${l.id}" ${l.id === r0.listId ? 'selected' : ''}>${esc(l.label)} (${l.count} words)</option>`).join('')}</select>
+    <label for="st" style="margin-top:10px;display:block">Start at word number <span class="sub">(1 = the top of the list)</span></label><input id="st" type="number" min="1" value="1" style="width:110px">
+    <p class="sub">Students start from the top. Words before the start number count as already learned. Changing a list restarts this student's week with new words; their past test results are kept.</p>
+    <div class="row gap"><button class="btn pri" id="ok">Save</button><button class="btn" id="no">Cancel</button></div>`);
+  w.$('#no').onclick = w.close;
+  w.$('#ok').onclick = async () => {
+    const listId = w.$('#ls').value, startAt = Math.max(0, (parseInt(w.$('#st').value, 10) || 1) - 1);
+    if (list.some((r) => r.listId && r.listId !== listId) && !confirm('Change the list for ' + (one ? r0.name : 'these students') + '? Their current progress in the old list will be reset.')) return;
+    try { for (const r of list) await call('spell/progress/' + r.id, { method: 'PUT', body: { listId, startAt } }); toast('Saved'); w.close(); await load(); }
+    catch (e) { toast(e.message); }
+  };
+}
+// marking: each box starts empty; click -> tick; tick <-> cross
+function markModal(r) {
+  const state = {}; r.words.forEach((x) => (state[x] = null));
+  const w = modal(`<div class="row"><h3 class="grow" style="margin:0">${esc(r.name)} · Week ${r.week}</h3><button class="btn sm" id="x">Close</button></div>
+    <p class="sub" style="margin:4px 0 10px">${esc(r.label)} — tap a box to tick it; tap again to change it to a cross.</p>
+    <label style="display:flex;gap:10px;align-items:center;font-weight:800;padding:8px 10px;background:var(--writing);border-radius:12px"><input type="checkbox" id="ta" style="width:22px;height:22px"> Tick all</label>
+    <div id="wl" style="margin-top:8px"></div>
+    <div class="row gap"><b id="tl" class="grow"></b><button class="btn pri" id="sub" disabled>Submit results</button></div>`, 520);
+  const paint = () => {
+    w.$('#wl').innerHTML = r.words.map((x, i) => `<div class="mkrow" data-w="${esc(x)}" style="display:flex;gap:12px;align-items:center;padding:7px 4px;border-bottom:1px solid #eee"><button type="button" class="bx" aria-label="Mark ${esc(x)}" style="width:40px;height:40px;border-radius:10px;border:3px solid var(--char);background:${state[x] === true ? '#bff0b6' : state[x] === false ? '#ffc4b3' : '#fff'};font-size:1.5rem;font-weight:900;cursor:pointer;line-height:1">${state[x] === true ? '✓' : state[x] === false ? '✗' : ''}</button><span class="sub" style="width:1.4em">${i + 1}</span><b style="font-size:1.2rem">${esc(x)}</b></div>`).join('');
+    w.$$('.mkrow').forEach((row) => (row.querySelector('.bx').onclick = () => { const k = row.dataset.w; state[k] = state[k] === true ? false : true; paint(); }));
+    const vals = r.words.map((x) => state[x]), right = vals.filter((v) => v === true).length, done = vals.every((v) => v !== null);
+    w.$('#ta').checked = vals.every((v) => v === true);
+    w.$('#tl').textContent = done ? `${right} / ${r.words.length} correct` : `${vals.filter((v) => v !== null).length} of ${r.words.length} marked`;
+    w.$('#sub').disabled = !done;
+  };
+  w.$('#ta').onchange = (e) => { r.words.forEach((x) => (state[x] = e.target.checked ? true : null)); paint(); };
+  w.$('#x').onclick = w.close;
+  w.$('#sub').onclick = async () => {
+    w.$('#sub').disabled = true;
+    try {
+      const d = await call('spell/tests', { method: 'POST', body: { studentId: r.id, results: state, day: testDay } });
+      toast(d.finished ? 'All spelling lists finished! 🎉' : d.advanced ? `${firstName(r.name)} finished the list and moved up to ${d.spell.label} 🎉` : `${firstName(r.name)}: ${Object.values(state).filter(Boolean).length}/${r.words.length} saved`, 3500);
+      w.close(); await load();
+    } catch (e) { toast(e.message); w.$('#sub').disabled = false; }
+  };
+  paint();
+}
+async function historyModal(r) {
+  const w = modal(`<div class="row"><h3 class="grow" style="margin:0">${esc(r.name)}</h3><button class="btn sm" id="x">Close</button></div><p class="mute">Loading…</p>`, 680);
+  w.$('#x').onclick = w.close;
+  try {
+    const s = (await call('spell/students/' + r.id)).spell;
+    w.m.querySelector('.card').innerHTML = `<div class="row"><h3 class="grow" style="margin:0">${esc(r.name)}</h3><button class="btn sm" id="x">Close</button></div>
+      <p class="sub">${s.listId ? `${esc(s.label)} · week ${s.week} · ${s.mastered}/${s.total} learned${s.completed.length ? ' · finished: ' + s.completed.map(esc).join(', ') : ''}` : 'No list set.'}</p>
+      ${s.scores.length ? s.scores.slice(0, 40).map((t) => `<div style="border-top:1px solid #e7dfca;padding:8px 0" data-sid="${t.id}"><div class="row"><b class="grow">Week ${t.week} · ${esc(t.label)}</b><span class="sub">${esc(fmtDay(t.day))}</span><b>${t.score}/${t.total}</b><button class="btn sm danger del" aria-label="Delete this result">✕</button></div><div class="sub" style="margin-top:4px">${t.results.map((x) => (x[1] ? '✓ ' : '✗ ') + esc(x[0])).join(' · ')}</div></div>`).join('') + '<p class="sub">Deleting a result does not change the student\'s progress.</p>' : '<p class="mute">No tests marked yet.</p>'}`;
+    w.$('#x').onclick = w.close;
+    w.$$('.del').forEach((b) => (b.onclick = async () => { if (!confirm('Delete this result?')) return; try { await call('spell/tests/' + b.closest('[data-sid]').dataset.sid, { method: 'DELETE' }); toast('Deleted'); w.close(); await load(); historyModal(r); } catch (e) { toast(e.message); } }));
+  } catch (e) { w.m.querySelector('.mute').textContent = e.message; }
+}
+load().catch((e) => { app.innerHTML = `<div class="empty"><h3>Something went wrong</h3><p>${esc(e.message)}</p></div>`; });
+</script>
+</body>
+</html>

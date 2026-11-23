@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en-NZ">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Maths facts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="icon" href="/assets/art/favicon.png"><link rel="apple-touch-icon" href="/assets/art/icon-192.png">
+<link rel="stylesheet" href="/assets/style.css">
+<link rel="stylesheet" href="/assets/theme-bold.css">
+<script src="/assets/config.js"></script>
+<script src="/assets/qrcode.js"></script>
+<script src="/assets/common.js"></script>
+<script src="/assets/mmm-data.js"></script>
+<script src="/assets/mmm-basic.js"></script>
+<script src="/assets/mmm-sheets.js"></script>
+<style>
+  .mstats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:0 0 16px}
+  .mstats .card{padding:14px 18px} .mstats b{font-size:2rem;font-weight:900;letter-spacing:-.04em;display:block;line-height:1}
+  .mbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .mbar .sep{width:1px;height:28px;background:rgba(27,27,27,.2)}
+  .mt{width:100%;border-collapse:separate;border-spacing:0 6px}
+  .mt th{font-size:.78rem;text-align:left;font-weight:700;color:var(--mute);padding:0 10px}
+  .mt td{background:#fff;padding:9px 10px;vertical-align:middle}
+  .mt td:first-child{border-radius:14px 0 0 14px;width:34px;text-align:center} .mt td:last-child{border-radius:0 14px 14px 0}
+  .mt tr.sel td{background:#fff3e0}
+  .nm{display:flex;align-items:center;gap:10px;font-weight:700;white-space:nowrap}
+  .av{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:.85rem;flex:none;background:var(--c)}
+  .lv{display:inline-block;border-radius:99px;padding:3px 12px;font-weight:800;font-size:.85rem;border:2px solid var(--char);background:var(--b,#fff);white-space:nowrap;cursor:pointer}
+  .lv.none{background:#ffe1d6;border-style:dashed}
+  .lv.bf{background:var(--char);color:var(--cream)}
+  .sc{width:62px;text-align:center;font-weight:800;font-size:1.05rem;padding:6px}
+  .sub{font-size:.8rem;color:var(--mute)}
+  .qrow{display:grid;grid-template-columns:130px 100px minmax(0,1fr) 78px 34px;gap:8px;align-items:center;margin:6px 0}
+  @media(max-width:760px){.mt .hide-s{display:none}.qrow{grid-template-columns:1fr 1fr}}
+  .qlist{max-height:240px;overflow:auto;border:2px solid rgba(27,27,27,.15);border-radius:12px;background:#fff;padding:6px 10px;margin-top:10px}
+  .qlist div{display:flex;gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid #eee;font-size:.92rem}
+  .hint{background:var(--writing);border-radius:14px;padding:10px 14px;font-size:.92rem;margin:0 0 14px}
+</style>
+</head>
+<body>
+<header class="top"><div class="in">
+  <a class="brand" href="/teacher.html#/"><span class="logo" id="logo"></span><span><b id="bn"></b><small id="bs"></small></span></a>
+  <nav class="nav" aria-label="Main">
+    <a href="/teacher.html#/" id="n1"></a><a href="/teacher.html#/roster" id="n2"></a><a href="/mmm.html" class="on" id="n9"></a><a href="/spelling.html" id="n10"></a>
+    <button id="out"></button>
+  </nav>
+</div></header>
+<main class="wrap" id="app"><p class="mute">Loading…</p></main>
+
+<script>
+const { $, $$, svg, esc, CFG, api, store, toast, avColor, initials, firstName } = CP;
+const token = () => store.get('cp_t');
+if (!token()) location.replace('/');
+$('#logo').innerHTML = svg('logo'); $('#bn').textContent = CFG.className + ' Portfolio'; $('#bs').textContent = 'Teacher hub';
+$('#n1').innerHTML = svg('home') + 'Class'; $('#n2').innerHTML = svg('users') + 'Roster'; $('#n9').innerHTML = svg('result') + 'Maths facts'; $('#n10').innerHTML = svg('result') + 'Spelling';
+$('#out').innerHTML = svg('out') + 'Sign out'; $('#out').onclick = () => { store.del('cp_t'); location.href = '/'; };
+document.title = CFG.className + ' · Maths facts';
+
+async function call(path, o = {}) {
+  try { return await api(path, Object.assign({ token: token() }, o)); }
+  catch (e) { if (e.status === 401) { store.del('cp_t'); location.href = '/'; } throw e; }
+}
+const M = window.MMM;
+const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Pacific/Auckland' });
+let rows = [], picked = new Set(), testDay = today(), answers = false;
+const app = $('#app');
+
+const levelHtml = (r) => !r.mode ? '<span class="lv none" data-lv>Not set</span>'
+  : r.mode === 'basic' ? `<span class="lv bf" data-lv>Basic Facts · T${r.term || 1} W${r.week || 1}</span>`
+  : `<span class="lv" data-lv style="--b:${M.bandOf(r.skill)}">Skill ${r.skill}</span>`;
+
+async function load() {
+  rows = (await call('mmm/class')).students;
+  picked = new Set([...picked].filter((id) => rows.some((r) => r.id === id)));
+  draw();
+}
+
+function draw() {
+  const onSkill = rows.filter((r) => r.mode === 'skill').length, onBasic = rows.filter((r) => r.mode === 'basic').length, none = rows.length - onSkill - onBasic;
+  if (!rows.length) { app.innerHTML = '<h2>Maths facts</h2><div class="empty"><h3>No students yet</h3><p>Add your class on the Roster page first, then come back to set their Mad Maths Minute levels.</p><a class="btn pri" href="/teacher.html#/roster">Go to Roster</a></div>'; return; }
+  const allOn = rows.length && rows.every((r) => picked.has(r.id));
+  app.innerHTML = `<h2>Maths facts <span style="font-weight:600;font-size:1rem;opacity:.85">Mad Maths Minute &amp; Basic Facts</span></h2>
+    <div class="mstats"><div class="card"><b>${onSkill}</b><span class="sub">on Mad Minute skills</span></div><div class="card"><b>${onBasic}</b><span class="sub">on Basic Facts</span></div><div class="card"><b>${none}</b><span class="sub">level not set yet</span></div></div>
+    ${none ? `<div class="hint"><b>${none} student${none === 1 ? ' has' : 's have'} no level yet.</b> Tap “Not set” (or tick them and press <i>Set level</i>) to choose their Mad Minute skill, or Basic Facts.</div>` : ''}
+    <div class="card"><div class="mbar">
+      <label class="sub" for="day">Test date</label><input type="date" id="day" value="${testDay}" style="width:auto;padding:6px 10px">
+      <span class="sep"></span>
+      <button class="btn sm" id="lvl">Set level for ticked</button>
+      <span class="sep"></span>
+      <button class="btn pri sm" id="pT">${svg('print')} Test sheets</button>
+      <button class="btn pri sm" id="pP">${svg('print')} Practice sheets</button>
+      <button class="btn pri sm" id="pB">${svg('print')} Basic Facts sheets</button>
+      <button class="btn sm" id="pX">Pick other sheets…</button>
+      <label class="sub" style="display:flex;gap:6px;align-items:center;font-weight:600"><input type="checkbox" id="ans" ${answers ? 'checked' : ''}> Answer key</label>
+    </div>
+    <p class="sub" style="margin:8px 0 0">Tick students, then print. Each sheet has the child's name on it and is for their <b>current</b> level. Two tests share a page, so an odd one out just leaves half a page to reuse.</p>
+    <table class="mt" style="margin-top:8px"><thead><tr><th><input type="checkbox" id="all" ${allOn ? 'checked' : ''} aria-label="Select all"></th><th>Student</th><th>Level</th><th class="hide-s">Last result</th><th>Enter this week's Mad Minute score</th><th></th></tr></thead><tbody>
+    ${rows.map((r) => `<tr data-id="${r.id}" class="${picked.has(r.id) ? 'sel' : ''}"><td><input type="checkbox" class="pk" ${picked.has(r.id) ? 'checked' : ''} aria-label="Select ${esc(r.name)}"></td>
+      <td><div class="nm"><span class="av" style="--c:${avColor(r.id)}">${esc(initials(r.name))}</span>${esc(r.name)}</div></td>
+      <td>${levelHtml(r)}</td>
+      <td class="hide-s sub">${r.last ? (r.last.kind === 'skill' ? `Skill ${r.last.skill}: <b>${r.last.score}/15</b>` : `Basic Facts: <b>${r.last.score}/${r.last.total}</b>`) + ` · ${esc(M.fmtDay(r.last.day))}` : '—'}</td>
+      <td>${r.mode === 'skill' ? `<span style="display:inline-flex;gap:6px;align-items:center"><input class="sc" type="number" inputmode="numeric" min="0" max="15" placeholder="/15" aria-label="Score for ${esc(r.name)}"><button class="btn sm svs">Save</button></span>` : r.mode === 'basic' ? '<span class="sub">Students take the Basic Facts test in their portfolio</span>' : '<span class="sub">Set a level first</span>'}</td>
+      <td style="text-align:right;white-space:nowrap"><button class="btn sm hist">History</button></td></tr>`).join('')}
+    </tbody></table></div>`;
+
+  $('#day').onchange = (e) => { testDay = e.target.value || today(); };
+  $('#ans').onchange = (e) => { answers = e.target.checked; };
+  $('#all').onchange = (e) => { picked = e.target.checked ? new Set(rows.map((r) => r.id)) : new Set(); draw(); };
+  $$('.pk').forEach((c) => (c.onchange = () => { const id = c.closest('tr').dataset.id; c.checked ? picked.add(id) : picked.delete(id); c.closest('tr').classList.toggle('sel', c.checked); }));
+  $$('[data-lv]').forEach((b) => (b.onclick = () => levelModal([rows.find((r) => r.id === b.closest('tr').dataset.id)])));
+  $$('.hist').forEach((b) => (b.onclick = () => historyModal(rows.find((r) => r.id === b.closest('tr').dataset.id))));
+  $$('tr[data-id]').forEach((tr) => {
+    const inp = $('.sc', tr), btn = $('.svs', tr);
+    if (!inp) return;
+    const go = () => saveScore(tr.dataset.id, inp.value);
+    btn.onclick = go; inp.onkeydown = (e) => { if (e.key === 'Enter') go(); };
+  });
+  $('#lvl').onclick = () => { const sel = ticked(); if (sel.length) levelModal(sel); };
+  $('#pT').onclick = () => printTicked('test'); $('#pP').onclick = () => printTicked('practice'); $('#pB').onclick = () => printTicked('basic');
+  $('#pX').onclick = builderModal;
+}
+
+const ticked = () => { const s = rows.filter((r) => picked.has(r.id)); if (!s.length) toast('Tick one or more students first'); return s; };
+
+async function saveScore(id, val) {
+  const r = rows.find((x) => x.id === id);
+  if (val === '' || !/^\d+$/.test(val) || +val > 15) return toast('Enter a whole number from 0 to 15');
+  try {
+    const d = await call('mmm/scores', { method: 'POST', body: { studentId: id, score: +val, day: testDay } });
+    const fn = firstName(r.name);
+    toast(d.toBasic ? `${fn}: ${val}/15 — finished Skill ${M.LAST}! Moved to Basic Facts 🎉` : d.advanced ? `${fn}: ${val}/15 ⭐ moved up to Skill ${d.mmm.skill}` : `${fn}: ${val}/15 saved`, 3200);
+    await load();
+  } catch (e) { toast(e.message); }
+}
+
+function printTicked(kind) {
+  const sel = ticked(); if (!sel.length) return;
+  const byName = (a, b) => a.name.localeCompare(b.name);
+  if (kind === 'basic') {
+    const items = sel.filter((r) => r.mode === 'basic').sort(byName).map((r) => ({ term: r.term || 1, week: r.week || 1, name: r.name }));
+    if (!items.length) return toast('None of the ticked students are on Basic Facts');
+    return M.openPrint({ title: 'Basic Facts sheets', pages: M.bfPages(items) });
+  }
+  const items = sel.filter((r) => r.mode === 'skill').sort(byName).map((r) => ({ skill: r.skill, name: r.name }));
+  if (!items.length) return toast('None of the ticked students are on a Mad Minute skill');
+  const skipped = sel.length - items.length;
+  if (skipped) toast(skipped + ' ticked student' + (skipped === 1 ? ' is' : 's are') + ' not on a skill, so left out');
+  M.openPrint(kind === 'test' ? { title: 'Mad Maths Minute tests' + (answers ? ' — answers' : ''), pages: M.testPages(items, answers) } : { title: 'Mad Maths Minute practice sheets' + (answers ? ' — answers' : ''), pages: M.practicePages(items, answers) });
+}
+
+// ---------- modals ----------
+function modal(html, wide) {
+  const m = document.createElement('div');
+  m.className = 'modal'; m.setAttribute('role', 'dialog'); m.setAttribute('aria-modal', 'true');
+  m.innerHTML = `<div class="card" style="width:min(${wide || 560}px,96vw);max-height:92vh;overflow:auto">${html}</div>`;
+  document.body.appendChild(m);
+  const close = () => m.remove();
+  m.addEventListener('click', (e) => { if (e.target === m) close(); });
+  return { m, close, $: (s) => m.querySelector(s), $$: (s) => [...m.querySelectorAll(s)] };
+}
+
+function levelModal(list) {
+  const r0 = list[0], one = list.length === 1;
+  const mode0 = r0.mode || 'skill';
+  const w = modal(`<h3 style="margin-top:0">${one ? esc(r0.name) : list.length + ' students'} — level</h3>
+    <div class="row" style="gap:18px;margin-bottom:10px"><label><input type="radio" name="md" value="skill" ${mode0 === 'skill' ? 'checked' : ''}> Mad Minute skill</label><label><input type="radio" name="md" value="basic" ${mode0 === 'basic' ? 'checked' : ''}> Basic Facts</label></div>
+    <div id="fs"><label for="sk">Skill (${M.FIRST}–${M.LAST})</label><select id="sk">${M.SKILLS.map((s) => `<option value="${s}" ${s === (r0.skill || M.FIRST) ? 'selected' : ''}>Skill ${s}</option>`).join('')}</select>
+      <p class="sub" id="gl" style="margin:6px 0 0"></p></div>
+    <div id="fb" class="row" style="gap:12px"><div><label for="tm">Term</label><select id="tm">${[1, 2, 3, 4].map((t) => `<option ${t === (r0.term || 1) ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
+      <div><label for="wk">Week</label><select id="wk"></select></div></div>
+    <div class="row gap"><button class="btn pri" id="ok">Save</button><button class="btn" id="no">Cancel</button></div>`);
+  const fillWeeks = () => { w.$('#wk').innerHTML = M.bfWeeks(+w.$('#tm').value).map((x) => `<option ${x === (r0.week || 1) ? 'selected' : ''}>${x}</option>`).join(''); };
+  const sync = () => {
+    const b = w.$('input[name=md]:checked').value === 'basic';
+    w.$('#fs').style.display = b ? 'none' : ''; w.$('#fb').style.display = b ? '' : 'none';
+    w.$('#gl').textContent = (M.D[+w.$('#sk').value] || {}).goal ? 'Learning to ' + M.D[+w.$('#sk').value].goal + '.' : '';
+  };
+  w.$$('input[name=md]').forEach((i) => (i.onchange = sync)); w.$('#sk').onchange = sync; w.$('#tm').onchange = fillWeeks;
+  fillWeeks(); sync();
+  w.$('#no').onclick = w.close;
+  w.$('#ok').onclick = async () => {
+    const mode = w.$('input[name=md]:checked').value;
+    const body = mode === 'basic' ? { mode, term: +w.$('#tm').value, week: +w.$('#wk').value } : { mode, skill: +w.$('#sk').value };
+    try { for (const r of list) await call('mmm/progress/' + r.id, { method: 'PUT', body }); toast('Saved'); w.close(); await load(); }
+    catch (e) { toast(e.message); }
+  };
+}
+
+async function historyModal(r) {
+  const w = modal(`<div class="row"><h3 class="grow" style="margin:0">${esc(r.name)}</h3><button class="btn sm" id="x">Close</button></div><p class="mute">Loading…</p>`, 680);
+  w.$('#x').onclick = w.close;
+  try {
+    const d = (await call('mmm/students/' + r.id)).mmm, sk = d.scores.filter((s) => s.kind === 'skill'), bf = d.scores.filter((s) => s.kind === 'basic');
+    w.m.querySelector('.card').innerHTML = `<div class="row"><h3 class="grow" style="margin:0">${esc(r.name)}</h3><button class="btn sm" id="x">Close</button></div>
+      <p style="margin:6px 0 10px">${levelHtml(d).replace('data-lv', '')}</p>
+      ${sk.length ? `<h4>Mad Minute scores</h4>${M.scoreChart(d.scores)}` : '<p class="mute">No Mad Minute scores yet.</p>'}
+      ${d.scores.length ? `<table style="width:100%;border-collapse:collapse;font-size:.92rem;margin-top:8px"><thead><tr style="text-align:left"><th>Date</th><th>What</th><th>Result</th><th></th></tr></thead><tbody>${d.scores.slice(0, 60).map((s) => `<tr style="border-top:1px solid #e7dfca" data-sid="${s.id}"><td style="padding:5px 0">${esc(M.fmtDay(s.day))}</td><td>${s.kind === 'skill' ? 'Skill ' + s.skill : `Basic Facts T${s.term} W${s.week}`}</td><td><b>${s.score}</b>/${s.total}${s.kind === 'basic' ? ' · ' + esc(M.fmtTime(s.seconds || 0)) + (s.timedOut ? ' (time up)' : '') : ''}${s.advanced ? ' ⭐' : ''}</td><td style="text-align:right"><button class="btn sm danger del" aria-label="Delete this result">✕</button></td></tr>`).join('')}</tbody></table>
+      <p class="sub">Deleting a result does not change the student's level — use the level chip for that.</p>` : ''}`;
+    w.$('#x').onclick = w.close;
+    w.$$('.del').forEach((b) => (b.onclick = async () => {
+      if (!confirm('Delete this result?')) return;
+      try { await call('mmm/scores/' + b.closest('tr').dataset.sid, { method: 'DELETE' }); toast('Deleted'); w.close(); await load(); historyModal(r); } catch (e) { toast(e.message); }
+    }));
+  } catch (e) { w.m.querySelector('.mute').textContent = e.message; }
+}
+
+// "Pick other sheets": any skill, any number, optionally with a name — e.g. test 23 and test 49 on one page
+function builderModal() {
+  const queue = [];
+  const w = modal(`<h3 style="margin-top:0">Pick the sheets you want</h3>
+    <p class="sub" style="margin-top:0">Add any skill — tests are packed two to a page in the order you add them, so you can print, for example, Test 23 and Test 49 on one sheet of paper.</p>
+    <div class="qrow"><select id="bt"><option value="test">Test</option><option value="practice">Practice</option><option value="basic">Basic Facts</option></select>
+      <select id="bs2"></select><select id="bn2"><option value="">No name (blank)</option>${rows.map((r) => `<option value="${r.id}">${esc(r.name)}</option>`).join('')}</select>
+      <input id="bc" type="number" min="1" max="40" value="1" aria-label="Copies"><button class="btn sm pri" id="add">Add</button></div>
+    <div class="qlist" id="ql"></div>
+    <div class="row gap"><label class="sub" style="display:flex;gap:6px;align-items:center;font-weight:600"><input type="checkbox" id="ak" ${answers ? 'checked' : ''}> Answer key</label><span class="grow"></span><button class="btn pri" id="go">Preview &amp; print</button><button class="btn" id="no">Cancel</button></div>`, 680);
+  const bs = w.$('#bs2');
+  const fillSel = () => {
+    const t = w.$('#bt').value;
+    if (t === 'basic') { const o = []; for (const tm of [1, 2, 3, 4]) for (const wk of M.bfWeeks(tm)) o.push(`<option value="${tm}-${wk}">Term ${tm}, Week ${wk}</option>`); bs.innerHTML = o.join(''); }
+    else bs.innerHTML = M.SKILLS.map((s) => `<option value="${s}">Skill ${s}</option>`).join('');
+  };
+  w.$('#bt').onchange = fillSel; fillSel();
+  const showQ = () => {
+    w.$('#ql').innerHTML = queue.length ? queue.map((q, i) => `<div><b style="width:78px">${q.type === 'test' ? 'Test' : q.type === 'practice' ? 'Practice' : 'Basic'}</b><span class="grow" style="flex:1">${esc(q.label)}${q.name ? ' — ' + esc(q.name) : ''}</span><button class="btn sm danger" data-i="${i}" aria-label="Remove">✕</button></div>`).join('') : '<p class="sub" style="margin:8px 0">Nothing added yet.</p>';
+    w.$$('[data-i]').forEach((b) => (b.onclick = () => { queue.splice(+b.dataset.i, 1); showQ(); }));
+  };
+  showQ();
+  w.$('#add').onclick = () => {
+    const type = w.$('#bt').value, v = bs.value, sid = w.$('#bn2').value, copies = Math.max(1, Math.min(40, +w.$('#bc').value || 1));
+    const name = sid ? rows.find((r) => r.id === sid).name : '';
+    for (let i = 0; i < copies; i++) queue.push(type === 'basic' ? { type, term: +v.split('-')[0], week: +v.split('-')[1], label: 'Term ' + v.split('-')[0] + ', Week ' + v.split('-')[1], name } : { type, skill: +v, label: 'Skill ' + v, name });
+    showQ();
+  };
+  w.$('#no').onclick = w.close;
+  w.$('#go').onclick = () => {
+    if (!queue.length) return toast('Add at least one sheet');
+    const ak = w.$('#ak').checked, pages = [];
+    const t = queue.filter((q) => q.type === 'test').map((q) => ({ skill: q.skill, name: q.name }));
+    pages.push(...M.testPages(t, ak));
+    pages.push(...M.practicePages(queue.filter((q) => q.type === 'practice').map((q) => ({ skill: q.skill, name: q.name })), ak));
+    pages.push(...M.bfPages(queue.filter((q) => q.type === 'basic').map((q) => ({ term: q.term, week: q.week, name: q.name }))));
+    M.openPrint({ title: 'Mad Maths Minute sheets', pages });
+  };
+}
+
+load().catch((e) => { app.innerHTML = `<div class="empty"><h3>Something went wrong</h3><p>${esc(e.message)}</p></div>`; });
+</script>
+</body>
+</html>

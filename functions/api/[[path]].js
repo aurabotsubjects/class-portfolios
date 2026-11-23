@@ -5,6 +5,8 @@
 //   TEACHER_PASSWORD  secret          (your login)
 //   SESSION_SECRET    secret          (any long random string; signs login tokens)
 
+import { SPELL_LISTS } from '../_lib/spell-lists.js';
+
 const MAX_UPLOAD = 60 * 1024 * 1024; // 60 MB per file
 const SUBJECTS = ['Maths', 'Reading', 'Writing', 'Topic', 'Inbox'];
 const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no I, L, O, 0, 1
@@ -82,6 +84,12 @@ function ensureSchema(db) {
       db.prepare('CREATE TABLE IF NOT EXISTS items(id TEXT PRIMARY KEY, student_id TEXT NOT NULL, subject TEXT NOT NULL, title TEXT NOT NULL, kind TEXT NOT NULL, app TEXT, mime TEXT NOT NULL, size INTEGER NOT NULL, note TEXT, teacher_comment TEXT, family_visible INTEGER NOT NULL DEFAULT 1, sent_by TEXT NOT NULL, created_at INTEGER NOT NULL, meta TEXT)'),
       db.prepare('CREATE INDEX IF NOT EXISTS idx_items_student ON items(student_id, subject, created_at)'),
       db.prepare('CREATE TABLE IF NOT EXISTS throttle(k TEXT PRIMARY KEY, fails INTEGER NOT NULL, until INTEGER NOT NULL)'),
+      db.prepare('CREATE TABLE IF NOT EXISTS mmm_progress(student_id TEXT PRIMARY KEY, mode TEXT NOT NULL DEFAULT \'skill\', skill INTEGER, bf_term INTEGER, bf_week INTEGER, updated_at INTEGER NOT NULL)'),
+      db.prepare('CREATE TABLE IF NOT EXISTS mmm_scores(id TEXT PRIMARY KEY, student_id TEXT NOT NULL, kind TEXT NOT NULL, skill INTEGER, score INTEGER NOT NULL, total INTEGER, advanced INTEGER NOT NULL DEFAULT 0, term INTEGER, week INTEGER, seconds INTEGER, timed_out INTEGER, day TEXT NOT NULL, created_at INTEGER NOT NULL, sent_by TEXT NOT NULL)'),
+      db.prepare('CREATE INDEX IF NOT EXISTS idx_mmm_scores_student ON mmm_scores(student_id, created_at)'),
+      db.prepare('CREATE TABLE IF NOT EXISTS spell_progress(student_id TEXT PRIMARY KEY, list_id TEXT NOT NULL, mastered TEXT NOT NULL DEFAULT \'[]\', carry TEXT NOT NULL DEFAULT \'[]\', words TEXT NOT NULL DEFAULT \'[]\', week_no INTEGER NOT NULL DEFAULT 1, done TEXT NOT NULL DEFAULT \'[]\', finished INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL)'),
+      db.prepare('CREATE TABLE IF NOT EXISTS spell_tests(id TEXT PRIMARY KEY, student_id TEXT NOT NULL, list_id TEXT NOT NULL, week_no INTEGER NOT NULL, results TEXT NOT NULL, score INTEGER NOT NULL, total INTEGER NOT NULL, day TEXT, created_at INTEGER NOT NULL)'),
+      db.prepare('CREATE INDEX IF NOT EXISTS idx_spell_tests_student ON spell_tests(student_id, created_at)'),
     ]).catch((e) => { schemaReady = null; throw e; });
   }
   return schemaReady;
@@ -161,6 +169,52 @@ function kindFromMime(m) {
 }
 const clip = (s, n) => String(s || '').trim().slice(0, n);
 
+
+// ---------- Mad Maths Minute (levels, test scores, Basic Facts attempts) ----------
+const MMM_FIRST = 8, MMM_LAST = 50, MMM_PASS = 15;
+const nzToday = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Pacific/Auckland' });
+const mmmScoreOut = (r) => ({ id: r.id, kind: r.kind, skill: r.skill, score: r.score, total: r.total, advanced: !!r.advanced, term: r.term, week: r.week, seconds: r.seconds, timedOut: !!r.timed_out, day: r.day, at: r.created_at, by: r.sent_by });
+async function mmmFor(db, sid) {
+  const p = await db.prepare('SELECT * FROM mmm_progress WHERE student_id=?').bind(sid).first();
+  const rows = (await db.prepare('SELECT * FROM mmm_scores WHERE student_id=? ORDER BY created_at DESC LIMIT 300').bind(sid).all()).results;
+  return { mode: p ? p.mode : null, skill: p ? p.skill : null, term: p ? p.bf_term : null, week: p ? p.bf_week : null, scores: rows.map(mmmScoreOut) };
+}
+const mmmSetProgress = (db, sid, mode, skill, term, week) => db.prepare(
+  'INSERT INTO mmm_progress(student_id,mode,skill,bf_term,bf_week,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(student_id) DO UPDATE SET mode=?, skill=?, bf_term=?, bf_week=?, updated_at=?')
+  .bind(sid, mode, skill, term, week, Date.now(), mode, skill, term, week, Date.now()).run();
+const intIn = (v, lo, hi) => Number.isInteger(Number(v)) && v !== '' && v !== null && Number(v) >= lo && Number(v) <= hi ? Number(v) : null;
+
+
+// ---------- Spelling (word lists, weekly 10 words, paper tests marked by the teacher) ----------
+const SPELL_PER_WEEK = 10;
+const spellList = (id) => SPELL_LISTS.find((l) => l.id === id);
+const jparse = (t, d) => { try { const v = JSON.parse(t); return Array.isArray(v) ? v : d; } catch { return d; } };
+// This week's words: missed words first (they carry over), then the next unlearned words in list order,
+// and if the list is nearly finished, topped up from the start of the list.
+function spellPlan(list, mastered, carry) {
+  const done = new Set(mastered), out = [];
+  for (const w of carry) if (list.words.includes(w) && !done.has(w) && !out.includes(w)) out.push(w);
+  for (const w of list.words) { if (out.length >= SPELL_PER_WEEK) break; if (!done.has(w) && !out.includes(w)) out.push(w); }
+  for (const w of list.words) { if (out.length >= SPELL_PER_WEEK) break; if (!out.includes(w)) out.push(w); }
+  return out.slice(0, SPELL_PER_WEEK);
+}
+const spellTestOut = (r) => ({ id: r.id, listId: r.list_id, label: (spellList(r.list_id) || {}).label || r.list_id, week: r.week_no, results: jparse(r.results, []), score: r.score, total: r.total, day: r.day, at: r.created_at });
+async function spellFor(db, sid) {
+  const p = await db.prepare('SELECT * FROM spell_progress WHERE student_id=?').bind(sid).first();
+  if (!p) return { listId: null, scores: [] };
+  const l = spellList(p.list_id) || { label: p.list_id, words: [] };
+  const rows = (await db.prepare('SELECT * FROM spell_tests WHERE student_id=? ORDER BY created_at DESC LIMIT 200').bind(sid).all()).results;
+  return { listId: p.list_id, label: l.label, week: p.week_no, words: jparse(p.words, []), mastered: jparse(p.mastered, []).length, total: l.words.length, finished: !!p.finished, completed: jparse(p.done, []).map((id) => (spellList(id) || {}).label || id), scores: rows.map(spellTestOut) };
+}
+async function spellSet(db, sid, listId, startAt, keepDone) {
+  const l = spellList(listId);
+  const old = await db.prepare('SELECT * FROM spell_progress WHERE student_id=?').bind(sid).first();
+  const mastered = l.words.slice(0, startAt), words = spellPlan(l, mastered, []);
+  const done = old ? jparse(old.done, []) : [];
+  await db.prepare('INSERT INTO spell_progress(student_id,list_id,mastered,carry,words,week_no,done,finished,updated_at) VALUES(?,?,?,?,?,?,?,0,?) ON CONFLICT(student_id) DO UPDATE SET list_id=?, mastered=?, carry=?, words=?, week_no=?, done=?, finished=0, updated_at=?')
+    .bind(sid, listId, JSON.stringify(mastered), '[]', JSON.stringify(words), old ? old.week_no : 1, JSON.stringify(done), Date.now(), listId, JSON.stringify(mastered), '[]', JSON.stringify(words), old ? old.week_no : 1, JSON.stringify(done), Date.now()).run();
+}
+
 // ---------- router ----------
 export async function onRequest({ request, env }) {
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
@@ -211,7 +265,7 @@ export async function onRequest({ request, env }) {
       const cls = await getSettings(db);
       if (cls.closedAt && cls.familyUntil && Date.now() > cls.familyUntil) return json({ error: 'This class portfolio has now closed. Please contact your child\'s school if you need a copy of their work.', expired: true }, 410);
       const rows = await db.prepare('SELECT * FROM items WHERE student_id=? AND family_visible=1 ORDER BY created_at DESC').bind(st.id).all();
-      return json({ student: studentOut(st), items: rows.results.map(itemOut), reports: await visibleReports(db, st.id), checks: cls.showProgress ? await checksOf(db, st.id) : null, class: classOut(cls), calendar: await calendarOut(db) });
+      return json({ student: studentOut(st), items: rows.results.map(itemOut), reports: await visibleReports(db, st.id), checks: cls.showProgress ? await checksOf(db, st.id) : null, class: classOut(cls), calendar: await calendarOut(db), mmm: await mmmFor(db, st.id), spell: await spellFor(db, st.id) });
     }
 
     // ----- files (capability URLs: the id is a long random string) -----
@@ -234,12 +288,24 @@ export async function onRequest({ request, env }) {
       if (!st) return fail(401, 'Please sign in');
       const rows = await db.prepare('SELECT * FROM items WHERE student_id=? ORDER BY created_at DESC').bind(me.sid).all();
       const cls = await getSettings(db);
-      return json({ student: studentOut(st), items: rows.results.map(itemOut), reports: await visibleReports(db, st.id), checks: cls.showProgress ? await checksOf(db, st.id) : null, calendar: await calendarOut(db) });
+      return json({ student: studentOut(st), items: rows.results.map(itemOut), reports: await visibleReports(db, st.id), checks: cls.showProgress ? await checksOf(db, st.id) : null, calendar: await calendarOut(db), mmm: await mmmFor(db, st.id), spell: await spellFor(db, st.id) });
     }
 
     if (a === 'roster' && m === 'GET' && teacher) { // names only, for the widget's "send to…" picker
       const rows = await db.prepare('SELECT id,name FROM students ORDER BY name').all();
       return json({ students: rows.results });
+    }
+
+    // ----- Mad Maths Minute: a student saves a Basic Facts attempt -----
+    if (a === 'mmm' && b === 'basic' && m === 'POST' && !teacher) {
+      const pr = await db.prepare('SELECT * FROM mmm_progress WHERE student_id=?').bind(me.sid).first();
+      if (!pr || pr.mode !== 'basic') return fail(403, 'Basic Facts tests open up once your teacher moves you to Basic Facts.');
+      const p = await request.json().catch(() => ({}));
+      const term = intIn(p.term, 1, 4), week = intIn(p.week, 1, 12), attempted = intIn(p.attempted, 0, 100), correct = intIn(p.correct, 0, 100), seconds = intIn(p.seconds, 0, 300);
+      if (term === null || week === null || attempted === null || correct === null || seconds === null || correct > attempted) return fail(400, 'That result does not look right.');
+      await db.prepare('INSERT INTO mmm_scores(id,student_id,kind,skill,score,total,advanced,term,week,seconds,timed_out,day,created_at,sent_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+        .bind(randId(12), me.sid, 'basic', null, correct, attempted, 0, term, week, seconds, p.timedOut ? 1 : 0, nzToday(), Date.now(), 'student').run();
+      return json({ mmm: await mmmFor(db, me.sid) }, 201);
     }
 
     if (a === 'upload' && m === 'POST') return upload(env, request, url, me);
@@ -316,9 +382,112 @@ export async function onRequest({ request, env }) {
     if (a === 'students' && b && m === 'DELETE') {
       const rows = (await db.prepare('SELECT id FROM items WHERE student_id=?').bind(b).all()).results;
       for (let i = 0; i < rows.length; i += 500) await env.FILES.delete(rows.slice(i, i + 500).map((r) => b + '/' + r.id));
-      await db.batch([db.prepare('DELETE FROM items WHERE student_id=?').bind(b), db.prepare('DELETE FROM checks WHERE student_id=?').bind(b), db.prepare('DELETE FROM reports WHERE student_id=?').bind(b), db.prepare('DELETE FROM students WHERE id=?').bind(b)]);
+      await db.batch([db.prepare('DELETE FROM items WHERE student_id=?').bind(b), db.prepare('DELETE FROM checks WHERE student_id=?').bind(b), db.prepare('DELETE FROM reports WHERE student_id=?').bind(b), db.prepare('DELETE FROM mmm_progress WHERE student_id=?').bind(b), db.prepare('DELETE FROM mmm_scores WHERE student_id=?').bind(b), db.prepare('DELETE FROM spell_progress WHERE student_id=?').bind(b), db.prepare('DELETE FROM spell_tests WHERE student_id=?').bind(b), db.prepare('DELETE FROM students WHERE id=?').bind(b)]);
       return json({ ok: true, deleted: rows.length });
     }
+    // ----- Mad Maths Minute (teacher) -----
+    if (a === 'mmm' && b === 'class' && m === 'GET') {
+      const sts = (await db.prepare('SELECT * FROM students ORDER BY name COLLATE NOCASE').all()).results;
+      const prog = {}; for (const r of (await db.prepare('SELECT * FROM mmm_progress').all()).results) prog[r.student_id] = r;
+      const last = {}, cnt = {};
+      for (const r of (await db.prepare('SELECT * FROM mmm_scores ORDER BY created_at DESC LIMIT 3000').all()).results) {
+        cnt[r.student_id] = (cnt[r.student_id] || 0) + 1;
+        if (!last[r.student_id]) last[r.student_id] = mmmScoreOut(r);
+      }
+      return json({ students: sts.map((s) => { const p = prog[s.id]; return { id: s.id, name: s.name, year: s.year || null, mode: p ? p.mode : null, skill: p ? p.skill : null, term: p ? p.bf_term : null, week: p ? p.bf_week : null, last: last[s.id] || null, count: cnt[s.id] || 0 }; }) });
+    }
+    if (a === 'mmm' && b === 'students' && c && m === 'GET') {
+      if (!(await db.prepare('SELECT id FROM students WHERE id=?').bind(c).first())) return fail(404, 'Not found');
+      return json({ mmm: await mmmFor(db, c) });
+    }
+    if (a === 'mmm' && b === 'progress' && c && m === 'PUT') {
+      if (!(await db.prepare('SELECT id FROM students WHERE id=?').bind(c).first())) return fail(404, 'Not found');
+      const p = await request.json().catch(() => ({}));
+      if (p.mode === 'basic') {
+        const old = await db.prepare('SELECT * FROM mmm_progress WHERE student_id=?').bind(c).first();
+        await mmmSetProgress(db, c, 'basic', old ? old.skill : null, intIn(p.term, 1, 4) || (old && old.bf_term) || 1, intIn(p.week, 1, 12) || (old && old.bf_week) || 1);
+      } else if (p.mode === 'skill') {
+        const sk = intIn(p.skill, MMM_FIRST, MMM_LAST);
+        if (sk === null) return fail(400, 'Choose a skill from ' + MMM_FIRST + ' to ' + MMM_LAST);
+        const old = await db.prepare('SELECT * FROM mmm_progress WHERE student_id=?').bind(c).first();
+        await mmmSetProgress(db, c, 'skill', sk, old ? old.bf_term : null, old ? old.bf_week : null);
+      } else return fail(400, 'Unknown level type');
+      return json({ mmm: await mmmFor(db, c) });
+    }
+    if (a === 'mmm' && b === 'scores' && !c && m === 'POST') {
+      const p = await request.json().catch(() => ({}));
+      const sid = String(p.studentId || '');
+      const pr = await db.prepare('SELECT * FROM mmm_progress WHERE student_id=?').bind(sid).first();
+      if (!pr || pr.mode !== 'skill' || !pr.skill) return fail(400, 'Set this student\'s level first.');
+      const score = intIn(p.score, 0, 15);
+      if (score === null) return fail(400, 'A Mad Minute score is a whole number from 0 to 15.');
+      const day = isDay(p.day) ? p.day : nzToday();
+      const skill = pr.skill, passed = score >= MMM_PASS;
+      let next = skill, toBasic = false;
+      if (passed) { if (skill >= MMM_LAST) toBasic = true; else next = skill + 1; }
+      await db.prepare('INSERT INTO mmm_scores(id,student_id,kind,skill,score,total,advanced,term,week,seconds,timed_out,day,created_at,sent_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+        .bind(randId(12), sid, 'skill', skill, score, 15, passed ? 1 : 0, null, null, null, null, day, Date.now(), 'teacher').run();
+      if (toBasic) await mmmSetProgress(db, sid, 'basic', skill, pr.bf_term || 1, pr.bf_week || 1);
+      else if (passed) await mmmSetProgress(db, sid, 'skill', next, pr.bf_term, pr.bf_week);
+      return json({ mmm: await mmmFor(db, sid), advanced: passed, toBasic }, 201);
+    }
+    // ----- Spelling (teacher) -----
+    if (a === 'spell' && b === 'lists' && m === 'GET') return json({ lists: SPELL_LISTS.map((l) => ({ id: l.id, label: l.label, year: l.year, count: l.words.length })) });
+    if (a === 'spell' && b === 'class' && m === 'GET') {
+      const sts = (await db.prepare('SELECT * FROM students ORDER BY name COLLATE NOCASE').all()).results;
+      const prog = {}; for (const r of (await db.prepare('SELECT * FROM spell_progress').all()).results) prog[r.student_id] = r;
+      const last = {}; for (const r of (await db.prepare('SELECT * FROM spell_tests ORDER BY created_at DESC LIMIT 3000').all()).results) if (!last[r.student_id]) last[r.student_id] = spellTestOut(r);
+      return json({ students: sts.map((s) => { const p = prog[s.id], l = p && spellList(p.list_id); return { id: s.id, name: s.name, year: s.year || null, listId: p ? p.list_id : null, label: l ? l.label : null, week: p ? p.week_no : null, words: p ? jparse(p.words, []) : [], mastered: p ? jparse(p.mastered, []).length : 0, total: l ? l.words.length : 0, finished: !!(p && p.finished), last: last[s.id] || null }; }) });
+    }
+    if (a === 'spell' && b === 'students' && c && m === 'GET') {
+      if (!(await db.prepare('SELECT id FROM students WHERE id=?').bind(c).first())) return fail(404, 'Not found');
+      return json({ spell: await spellFor(db, c) });
+    }
+    if (a === 'spell' && b === 'progress' && c && m === 'PUT') {
+      if (!(await db.prepare('SELECT id FROM students WHERE id=?').bind(c).first())) return fail(404, 'Not found');
+      const p = await request.json().catch(() => ({}));
+      const l = spellList(String(p.listId || ''));
+      if (!l) return fail(400, 'Choose a word list.');
+      const startAt = p.startAt === undefined || p.startAt === '' ? 0 : intIn(p.startAt, 0, l.words.length - 1);
+      if (startAt === null) return fail(400, 'Start-at must be between 0 and ' + (l.words.length - 1));
+      await spellSet(db, c, l.id, startAt);
+      return json({ spell: await spellFor(db, c) });
+    }
+    if (a === 'spell' && b === 'tests' && !c && m === 'POST') {
+      const p = await request.json().catch(() => ({}));
+      const sid = String(p.studentId || '');
+      const pr = await db.prepare('SELECT * FROM spell_progress WHERE student_id=?').bind(sid).first();
+      if (!pr) return fail(400, 'Choose this student\'s word list first.');
+      const l = spellList(pr.list_id), words = jparse(pr.words, []);
+      if (!l || !words.length) return fail(400, 'This student has no words this week.');
+      const res = p.results && typeof p.results === 'object' ? p.results : {};
+      for (const w of words) if (typeof res[w] !== 'boolean') return fail(400, 'Mark every word with a tick or a cross first.');
+      const day = isDay(p.day) ? p.day : nzToday();
+      const ok = words.filter((w) => res[w]), bad = words.filter((w) => !res[w]);
+      let mastered = jparse(pr.mastered, []).filter((w) => !bad.includes(w));
+      for (const w of ok) if (!mastered.includes(w)) mastered.push(w);
+      let listId = pr.list_id, done = jparse(pr.done, []), finished = 0, carry = bad, advanced = false;
+      if (l.words.every((w) => mastered.includes(w))) {
+        done.push(l.id); advanced = true; carry = []; mastered = [];
+        const i = SPELL_LISTS.findIndex((x) => x.id === l.id);
+        if (i >= 0 && i < SPELL_LISTS.length - 1) listId = SPELL_LISTS[i + 1].id; else finished = 1;
+      }
+      const nl = spellList(listId), next = finished ? [] : spellPlan(nl, mastered, carry);
+      await db.batch([
+        db.prepare('INSERT INTO spell_tests(id,student_id,list_id,week_no,results,score,total,day,created_at) VALUES(?,?,?,?,?,?,?,?,?)').bind(randId(12), sid, l.id, pr.week_no, JSON.stringify(words.map((w) => [w, res[w] ? 1 : 0])), ok.length, words.length, day, Date.now()),
+        db.prepare('UPDATE spell_progress SET list_id=?, mastered=?, carry=?, words=?, week_no=?, done=?, finished=?, updated_at=? WHERE student_id=?').bind(listId, JSON.stringify(mastered), JSON.stringify(carry), JSON.stringify(next), pr.week_no + 1, JSON.stringify(done), finished, Date.now(), sid),
+      ]);
+      return json({ spell: await spellFor(db, sid), advanced, finished: !!finished }, 201);
+    }
+    if (a === 'spell' && b === 'tests' && c && m === 'DELETE') {
+      await db.prepare('DELETE FROM spell_tests WHERE id=?').bind(c).run();
+      return json({ ok: true });
+    }
+    if (a === 'mmm' && b === 'scores' && c && m === 'DELETE') {
+      await db.prepare('DELETE FROM mmm_scores WHERE id=?').bind(c).run();
+      return json({ ok: true });
+    }
+
     // ----- calendar & notice (teacher writes, everyone reads via /my and /family) -----
     if (a === 'calendar' && !b && m === 'GET' && teacher) return json(await calendarOut(db));
     if ((a === 'events' && m === 'POST' && !b) || (a === 'events' && b && m === 'PATCH')) {
@@ -448,7 +617,7 @@ export async function onRequest({ request, env }) {
         const left = await db.prepare('SELECT COUNT(*) c FROM items').first();
         return json({ done: false, remaining: left.c });
       }
-      await db.batch([db.prepare('DELETE FROM students'), db.prepare('DELETE FROM checks'), db.prepare('DELETE FROM reports'), db.prepare('DELETE FROM settings'), db.prepare('DELETE FROM events'), db.prepare('DELETE FROM throttle')]);
+      await db.batch([db.prepare('DELETE FROM students'), db.prepare('DELETE FROM mmm_progress'), db.prepare('DELETE FROM mmm_scores'), db.prepare('DELETE FROM spell_progress'), db.prepare('DELETE FROM spell_tests'), db.prepare('DELETE FROM checks'), db.prepare('DELETE FROM reports'), db.prepare('DELETE FROM settings'), db.prepare('DELETE FROM events'), db.prepare('DELETE FROM throttle')]);
       return json({ done: true, remaining: 0 });
     }
 

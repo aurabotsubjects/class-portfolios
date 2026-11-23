@@ -21,7 +21,7 @@
 <header class="top"><div class="in">
   <a class="brand" href="#/"><span class="logo" id="logo"></span><span><b id="bn"></b><small id="bs"></small></span></a>
   <nav class="nav" aria-label="Main">
-    <a href="#/" data-r="home" id="n1"></a><a href="#/progress" data-r="progress" id="n5"></a><a href="#/roster" data-r="roster" id="n2"></a><a href="#/files" data-r="files" id="n7"></a><a href="#/calendar" data-r="calendar" id="n8"></a><a href="#/print" data-r="print" id="n3"></a><a href="#/apps" data-r="apps" id="n4"></a><a href="#/class" data-r="class" id="n6"></a>
+    <a href="#/" data-r="home" id="n1"></a><a href="#/progress" data-r="progress" id="n5"></a><a href="/mmm.html" data-r="mmm" id="n9"></a><a href="/spelling.html" data-r="spelling" id="n10"></a><a href="#/roster" data-r="roster" id="n2"></a><a href="#/files" data-r="files" id="n7"></a><a href="#/calendar" data-r="calendar" id="n8"></a><a href="#/print" data-r="print" id="n3"></a><a href="#/apps" data-r="apps" id="n4"></a><a href="#/class" data-r="class" id="n6"></a>
     <button id="out"></button>
   </nav>
 </div></header>
@@ -40,7 +40,7 @@ $('#logo').innerHTML = svg('logo');
 $('#bn').textContent = CFG.className + ' Portfolio';
 $('#bs').textContent = 'Teacher hub';
 document.title = CFG.className + ' · Teacher hub';
-$('#n1').innerHTML = svg('home') + 'Class'; $('#n5').innerHTML = svg('result') + 'Progress'; $('#n2').innerHTML = svg('users') + 'Roster'; $('#n7').innerHTML = svg('cloud') + 'Manage files'; $('#n8').innerHTML = svg('cal') + 'Calendar'; $('#n3').innerHTML = svg('qr') + 'Print'; $('#n4').innerHTML = svg('plug') + 'Connect apps'; $('#n6').innerHTML = svg('key') + 'Close class';
+$('#n1').innerHTML = svg('home') + 'Class'; $('#n5').innerHTML = svg('result') + 'Progress'; $('#n9').innerHTML = svg('result') + 'Maths facts'; $('#n10').innerHTML = svg('result') + 'Spelling'; $('#n2').innerHTML = svg('users') + 'Roster'; $('#n7').innerHTML = svg('cloud') + 'Manage files'; $('#n8').innerHTML = svg('cal') + 'Calendar'; $('#n3').innerHTML = svg('qr') + 'Print'; $('#n4').innerHTML = svg('plug') + 'Connect apps'; $('#n6').innerHTML = svg('key') + 'Close class';
 $('#out').innerHTML = svg('out') + 'Sign out';
 $('#out').onclick = () => { store.del('cp_t'); location.href = '/'; };
 
@@ -398,6 +398,18 @@ async function filesView() {
 async function makeDemo() {
   const made = (await call('students', { method: 'POST', body: { names: ['Demo Student (test)'], year: 5 } })).students[0];
   await call('students/' + made.id, { method: 'PATCH', body: { pron: 'she' } });
+  try { // Maths facts + spelling, so the demo child shows these tabs too
+    const dy = (n) => new Date(Date.now() - n * 864e5).toLocaleDateString('en-CA', { timeZone: 'Pacific/Auckland' });
+    await call('mmm/progress/' + made.id, { method: 'PUT', body: { mode: 'skill', skill: 23 } });
+    await call('mmm/scores', { method: 'POST', body: { studentId: made.id, score: 11, day: dy(14) } });
+    await call('mmm/scores', { method: 'POST', body: { studentId: made.id, score: 13, day: dy(7) } });
+    await call('spell/progress/' + made.id, { method: 'PUT', body: { listId: '5-words' } });
+    for (let wk = 0; wk < 2; wk++) {
+      const sp = (await call('spell/students/' + made.id)).spell, res = {};
+      sp.words.forEach((w, i) => { res[w] = i % 5 !== 2; });
+      await call('spell/tests', { method: 'POST', body: { studentId: made.id, results: res, day: dy(14 - wk * 7) } });
+    }
+  } catch (e) { /* optional extras */ }
   const png = (title, sub, col) => new Promise((res) => {
     const c = document.createElement('canvas'); c.width = 640; c.height = 440; const x = c.getContext('2d');
     x.fillStyle = '#F5ECDC'; x.fillRect(0, 0, 640, 440); x.fillStyle = col; x.fillRect(0, 0, 640, 90);
