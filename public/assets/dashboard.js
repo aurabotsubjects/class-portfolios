@@ -29,11 +29,12 @@
     const hasFacts = !!(d.mmm && d.mmm.mode && window.MMM && CP.mmmView);
     const hasSpell = !!(d.spell && d.spell.listId && window.SPELL && CP.spellView);
     const nav = [['home', 'home', 'My Portfolio'], ['cal', 'calendar', 'Calendar'], ['learn', 'learn', 'My Learning'], ['bulb', 'ideas', rep && o.who === 'family' ? 'Ideas for home' : 'Next steps']].concat(hasFacts ? [['facts', 'facts', 'Maths Facts']] : [], hasSpell ? [['spell', 'spell', 'Spelling']] : [], subs.map((s) => [s, 's:' + s, s]));
+    const canEdit = o.who === 'student' && !!(o.pfOpts && o.pfOpts.token) && !!CP.addWork;
     const kia = o.who === 'student' ? 'Kia ora,' : 'Kia ora, whānau of';
     root.innerHTML = `${closing}<div class="dash"><div class="dtop"><span class="dlogo">${svg('logo')}</span><b>${esc(CFG.className)} Portfolio</b><span class="grow"></span>
         <button class="dib" data-go="home" aria-label="Home">${ICON.home}</button><button class="dib" data-go="calendar" aria-label="Calendar">${ICON.cal}</button><button class="dib" data-go="learn" aria-label="My learning">${ICON.learn}</button><button class="dib" data-go="work" aria-label="All work">${ICON.grid}</button><button class="dib" id="dprint" aria-label="Print summary">${ICON.print}</button>
         ${o.onDone ? `<button class="dib done" id="ddone">${ICON.out}<span>I'm done</span></button>` : ''}</div>
-      <div class="dhero"><span class="dav" style="--c:${avColor(d.student.id)}">${esc(initials(d.student.name))}</span><div><div class="dk">${kia}</div><h1>${esc(name)}</h1><div class="dm">${items.length} piece${items.length === 1 ? '' : 's'} of learning</div></div></div>
+      <div class="dhero">${canEdit ? `<button class="davw" id="dpp" aria-label="Change my profile picture" title="Change my picture">${CP.avatarSpan(d.student, 'dav')}<i class="davc">📷</i></button>` : CP.avatarSpan(d.student, 'dav')}<div><div class="dk">${kia}</div><h1>${esc(name)}</h1><div class="dm">${items.length} piece${items.length === 1 ? '' : 's'} of learning</div></div>${canEdit ? '<button class="btn pri dadd" id="dadd" type="button">📷 Add work</button>' : ''}</div>
       <div class="dbody"><nav class="dside" aria-label="Sections">${nav.map(([ic, k, l]) => `<button data-go="${k}">${ICON[ic] || ICON.grid}<span>${l}</span>${k.startsWith('s:') ? `<i>${cnt(k.slice(2))}</i>` : ''}</button>`).join('')}
         <button id="dzip" class="dzip">${ICON.dl}<span>Download everything</span></button></nav>
         <section class="dmain" id="dmain" tabindex="-1"></section></div></div>`;
@@ -41,6 +42,11 @@
     const opts = (subject) => ({ student: d.student, items, reports: reps, checks: d.checks, showChecks: !!d.checks, subject });
     CP.downloadButton(root.querySelector('#dzip'), () => opts(), 'all');
     if (o.onDone) root.querySelector('#ddone').onclick = o.onDone;
+    if (canEdit) {
+      root.querySelector('#dpp').onclick = () => CP.profilePhoto({ token: o.pfOpts.token, who: 'student', student: d.student, onDone: (st) => { d.student = st; dashboard(root, d, o); } });
+      root.querySelector('#dadd').onclick = () => CP.addWork({ token: o.pfOpts.token, who: 'student', onDone: () => setTimeout(() => location.reload(), 600) });
+    }
+    if (!document.getElementById('davCss')) { const st = document.createElement('style'); st.id = 'davCss'; st.textContent = '.davw{position:relative;border:0;background:none;padding:0;cursor:pointer;flex:none}.davw .davc{position:absolute;right:-4px;bottom:-4px;background:var(--cream,#fff);border:3px solid var(--char,#1b1b1b);border-radius:99px;width:34px;height:34px;display:grid;place-items:center;font-style:normal;font-size:1rem}.dhero .dadd{margin-left:auto;font:800 1.05rem Poppins,sans-serif;padding:13px 22px;z-index:1;background:#ff5a1f;color:#fff;border:0;border-radius:16px;box-shadow:0 4px 0 #b43f00;cursor:pointer}.dhero .dadd:active{transform:translateY(2px);box-shadow:0 2px 0 #b43f00}'; document.head.appendChild(st); }
     const card = (h) => `<div class="card dcard">${h}</div>`;
 
     const views = {

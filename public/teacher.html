@@ -16,12 +16,15 @@
 <script src="/assets/common.js"></script>
 <script src="/assets/progress.js"></script>
 <script src="/assets/calendar.js"></script>
+<script src="/assets/avatar.js"></script>
+<script src="/assets/addwork.js"></script>
 </head>
 <body>
 <header class="top"><div class="in">
   <a class="brand" href="#/"><span class="logo" id="logo"></span><span><b id="bn"></b><small id="bs"></small></span></a>
   <nav class="nav" aria-label="Main">
-    <a href="#/" data-r="home" id="n1"></a><a href="#/progress" data-r="progress" id="n5"></a><a href="/mmm.html" data-r="mmm" id="n9"></a><a href="/spelling.html" data-r="spelling" id="n10"></a><a href="#/roster" data-r="roster" id="n2"></a><a href="#/files" data-r="files" id="n7"></a><a href="#/calendar" data-r="calendar" id="n8"></a><a href="#/print" data-r="print" id="n3"></a><a href="#/apps" data-r="apps" id="n4"></a><a href="#/class" data-r="class" id="n6"></a>
+    <a href="#/" data-r="home" id="n1"></a><a href="#/progress" data-r="progress" id="n5"></a><a href="#/roster" data-r="roster" id="n2"></a><a href="#/files" data-r="files" id="n7"></a><a href="#/calendar" data-r="calendar" id="n8"></a><a href="#/print" data-r="print" id="n3"></a><a href="#/apps" data-r="apps" id="n4"></a><a href="#/class" data-r="class" id="n6"></a>
+    <button id="nadd" type="button" class="btn pri sm" style="margin-right:6px">📷 Add photo</button>
     <button id="out"></button>
   </nav>
 </div></header>
@@ -40,9 +43,10 @@ $('#logo').innerHTML = svg('logo');
 $('#bn').textContent = CFG.className + ' Portfolio';
 $('#bs').textContent = 'Teacher hub';
 document.title = CFG.className + ' · Teacher hub';
-$('#n1').innerHTML = svg('home') + 'Class'; $('#n5').innerHTML = svg('result') + 'Progress'; $('#n9').innerHTML = svg('result') + 'Maths facts'; $('#n10').innerHTML = svg('result') + 'Spelling'; $('#n2').innerHTML = svg('users') + 'Roster'; $('#n7').innerHTML = svg('cloud') + 'Manage files'; $('#n8').innerHTML = svg('cal') + 'Calendar'; $('#n3').innerHTML = svg('qr') + 'Print'; $('#n4').innerHTML = svg('plug') + 'Connect apps'; $('#n6').innerHTML = svg('key') + 'Close class';
+$('#n1').innerHTML = svg('home') + 'Class'; $('#n5').innerHTML = svg('result') + 'Progress'; $('#n2').innerHTML = svg('users') + 'Roster'; $('#n7').innerHTML = svg('cloud') + 'Manage files'; $('#n8').innerHTML = svg('cal') + 'Calendar'; $('#n3').innerHTML = svg('qr') + 'Print'; $('#n4').innerHTML = svg('plug') + 'Connect apps'; $('#n6').innerHTML = svg('key') + 'Close class';
 $('#out').innerHTML = svg('out') + 'Sign out';
 $('#out').onclick = () => { store.del('cp_t'); location.href = '/'; };
+$('#nadd').onclick = async () => { try { await loadStudents(); } catch (e) {} CP.addWork({ who: 'teacher', token, students, onDone: () => route() }); };
 
 async function call(path, o = {}) {
   try { return await api(path, Object.assign({ token: token() }, o)); }
@@ -99,7 +103,7 @@ async function homeView() {
     const box = $('#stu'); box.innerHTML = '';
     students.filter((s) => s.name.toLowerCase().includes(f)).forEach((s) => {
       const b = document.createElement('button'); b.className = 'stu';
-      b.innerHTML = `<div class="row" style="flex-wrap:nowrap"><span class="avatar" style="--c:${avColor(s.id)}">${esc(initials(s.name))}</span><div><div class="nm">${esc(s.name)}</div><div class="small mute">${ago(s.last)}</div></div></div>
+      b.innerHTML = `<div class="row" style="flex-wrap:nowrap">${CP.avatarSpan(s, 'avatar')}<div><div class="nm">${esc(s.name)}</div><div class="small mute">${ago(s.last)}</div></div></div>
         <div class="pills">${CFG.subjects.map((x) => `<span class="pill s-${x}">${x} ${s.counts[x] || 0}</span>`).join('')}${s.counts.Inbox ? `<span class="pill s-Inbox">Inbox ${s.counts.Inbox}</span>` : ''}</div>`;
       b.onclick = () => (location.hash = '#/s/' + s.id);
       box.appendChild(b);
@@ -117,13 +121,14 @@ async function studentView(id, tab) {
   const s = d.student, items = d.items;
   items.forEach((i) => (i.studentName = s.name));
   const head = `<a href="#/" class="btn sm">${svg('back')} Class</a>
-    <div class="row" style="margin:16px 0 8px"><span class="avatar" style="--c:${avColor(s.id)};width:62px;height:62px;font-size:2rem">${esc(initials(s.name))}</span>
+    <div class="row" style="margin:16px 0 8px">${CP.avatarSpan(s, 'avatar', 'width:62px;height:62px;font-size:2rem')}
       <div class="grow"><h2 style="margin:0">${esc(s.name)}</h2><div class="small mute">Student code <code class="k">${fmtCode(s.code)}</code> · ${items.length} pieces of work</div></div>
-      <button class="btn" id="fq">${svg('qr')} Family QR</button><button class="btn" id="fl">${svg('copy')} Copy family link</button><button class="btn" id="zp">${svg('dl')} Download portfolio</button></div>
+      <button class="btn" id="stph" title="Change or remove this student's profile picture, or lock it">${s.avatarLocked ? '🔒 ' : ''}Profile picture</button><button class="btn" id="fq">${svg('qr')} Family QR</button><button class="btn" id="fl">${svg('copy')} Copy family link</button><button class="btn" id="zp">${svg('dl')} Download portfolio</button></div>
     <div class="mini-tabs"><a href="#/s/${s.id}" class="${tab === 'progress' ? '' : 'on'}">Work</a><a href="#/s/${s.id}/progress" class="${tab === 'progress' ? 'on' : ''}">Progress &amp; summary</a></div>`;
   app.innerHTML = head + '<div id="body" class="gap"></div>';
   $('#fl').onclick = () => copy(famUrl(s), 'Family link copied');
   $('#fq').onclick = () => qrModal(s);
+  $('#stph').onclick = () => CP.profilePhoto({ token, who: 'teacher', student: s, onDone: () => route() });
   CP.downloadButton($('#zp'), () => ({ student: s, items, reports: reportsCache(s.id), checks: checksCache(s.id), showChecks: true }));
   if (tab === 'progress') return progressTab(s, items, $('#body'));
   const pr = await call(`students/${s.id}/progress`).catch(() => null);
@@ -139,21 +144,12 @@ function workTab(s, items, box, tab) {
   let cur = subs.includes(tab) ? tab : subs[0];
   const draw = () => {
     box.innerHTML = `<div class="row"><div class="tabs grow" role="tablist" style="margin:0">${subs.map((x) => `<button class="tab s-${x}" role="tab" aria-selected="${x === cur}" data-s="${x}">${x}<span class="n">${items.filter((i) => i.subject === x).length}</span></button>`).join('')}</div>
-      <label class="btn pri" style="margin:0">${svg('plus')} Add work<input type="file" id="add" multiple hidden accept="image/*,video/*,audio/*,application/pdf,text/plain"></label></div><div id="pf" style="margin-top:16px"></div>`;
+      <button class="btn pri" id="add" type="button" style="margin:0">${svg('plus')} Add work</button></div><div id="pf" style="margin-top:16px"></div>`;
     $$('.tab', box).forEach((b) => (b.onclick = () => { cur = b.dataset.s; draw(); }));
     const pf = $('#pf', box); const list = items.filter((i) => i.subject === cur);
     if (!list.length) pf.innerHTML = `<div class="empty"><h3>No ${esc(cur)} work yet</h3><p>Work saved from your apps will appear here. You can also add a photo or video yourself with “Add work”.</p></div>`;
     else { pf.className = 'grid c3'; list.forEach((it) => pf.appendChild(workCard(it, { teacher: true, studentName: s.name, token, onChange: (n, old) => { if (!n) items.splice(items.indexOf(old), 1); route(); } }))); }
-    $('#add', box).onchange = async (e) => {
-      const files = [...e.target.files]; let ok = 0;
-      for (const f of files) {
-        try {
-          await fetch(`/api/upload?student=${s.id}&subject=${cur === 'Inbox' ? '' : cur}&title=${encodeURIComponent(f.name.replace(/\.[^.]+$/, ''))}`, { method: 'POST', headers: { Authorization: 'Bearer ' + token(), 'Content-Type': f.type || 'application/octet-stream', 'X-Filename': encodeURIComponent(f.name) }, body: f })
-            .then(async (r) => { if (!r.ok) throw new Error((await r.json()).error); }); ok++;
-        } catch (x) { toast(f.name + ': ' + x.message, 4000); }
-      }
-      if (ok) { toast(ok + ' added'); route(); }
-    };
+    $('#add', box).onclick = () => CP.addWork({ who: 'teacher', token, students, studentId: s.id, subject: cur === 'Inbox' ? '' : cur, onDone: () => route() });
   };
   draw();
 }
@@ -398,18 +394,6 @@ async function filesView() {
 async function makeDemo() {
   const made = (await call('students', { method: 'POST', body: { names: ['Demo Student (test)'], year: 5 } })).students[0];
   await call('students/' + made.id, { method: 'PATCH', body: { pron: 'she' } });
-  try { // Maths facts + spelling, so the demo child shows these tabs too
-    const dy = (n) => new Date(Date.now() - n * 864e5).toLocaleDateString('en-CA', { timeZone: 'Pacific/Auckland' });
-    await call('mmm/progress/' + made.id, { method: 'PUT', body: { mode: 'skill', skill: 23 } });
-    await call('mmm/scores', { method: 'POST', body: { studentId: made.id, score: 11, day: dy(14) } });
-    await call('mmm/scores', { method: 'POST', body: { studentId: made.id, score: 13, day: dy(7) } });
-    await call('spell/progress/' + made.id, { method: 'PUT', body: { listId: '5-words' } });
-    for (let wk = 0; wk < 2; wk++) {
-      const sp = (await call('spell/students/' + made.id)).spell, res = {};
-      sp.words.forEach((w, i) => { res[w] = i % 5 !== 2; });
-      await call('spell/tests', { method: 'POST', body: { studentId: made.id, results: res, day: dy(14 - wk * 7) } });
-    }
-  } catch (e) { /* optional extras */ }
   const png = (title, sub, col) => new Promise((res) => {
     const c = document.createElement('canvas'); c.width = 640; c.height = 440; const x = c.getContext('2d');
     x.fillStyle = '#F5ECDC'; x.fillRect(0, 0, 640, 440); x.fillStyle = col; x.fillRect(0, 0, 640, 90);
@@ -456,12 +440,12 @@ async function rosterView() {
         <div class="row gap" style="margin-top:10px"><button class="btn sm" id="demob" title="Creates a pretend child with sample work, results and ticks so you can try the Claude analysis">${svg('plus')} Add demo student</button><span class="small mute">Pretend child for testing. Delete them with the bin when done.</span></div></div>
       <div class="card"><h3>How access works</h3><p class="small"><b>Student code</b> — six characters, typed once on a shared iPad. Lets a student save and view their own work only.</p><p class="small"><b>Family QR</b> — a long private link, read-only, one child. If a card is lost or shared, press <i>New family QR</i> and the old one stops working straight away.</p><p class="small"><b>Year level</b> picks which curriculum statements appear on the Progress page. <b>Sex</b> is only used so Claude writes the summary with the right pronouns.</p></div>
     </div>
-    <div class="card gap" style="padding:8px 12px;overflow:auto"><table><thead><tr><th>Name</th><th>Year</th><th>Sex</th><th>Student code</th><th>Family link</th><th>Bucket folder</th><th>Work</th><th></th></tr></thead><tbody id="tb"></tbody></table></div>`;
+    <div class="card gap" style="padding:8px 12px;overflow:auto"><table><thead><tr><th>Photo</th><th>Name</th><th>Year</th><th>Sex</th><th>Student code</th><th>Family link</th><th>Bucket folder</th><th>Work</th><th></th></tr></thead><tbody id="tb"></tbody></table></div>`;
   const tb = $('#tb');
-  if (!students.length) tb.innerHTML = '<tr><td colspan="8" class="mute">No students yet.</td></tr>';
+  if (!students.length) tb.innerHTML = '<tr><td colspan="9" class="mute">No students yet.</td></tr>';
   students.forEach((s) => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td><input type="text" value="${esc(s.name)}" aria-label="Name" maxlength="60"></td>
+    tr.innerHTML = `<td style="white-space:nowrap">${CP.avatarSpan(s, 'avatar', 'width:40px;height:40px;font-size:1.2rem;display:inline-grid;vertical-align:middle')} <button class="btn sm" data-a="ph">${s.avatarLocked ? '🔒 ' : ''}Photo</button></td><td><input type="text" value="${esc(s.name)}" aria-label="Name" maxlength="60"></td>
       <td><select data-f="year" aria-label="Year level" style="width:auto"><option value="">–</option>${[4, 5, 6].map((v) => `<option ${v === s.year ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
       <td><select data-f="pron" aria-label="Sex" style="width:auto"><option value="">–</option>${[['he', 'Male'], ['she', 'Female']].map(([v, l]) => `<option value="${v}" ${v === s.pron ? 'selected' : ''}>${l}</option>`).join('')}</select></td>
       <td><code class="k">${fmtCode(s.code)}</code> <button class="btn sm" data-a="nc" title="Make a new code">New</button></td>
@@ -471,6 +455,7 @@ async function rosterView() {
     tr.onclick = async (e) => {
       const a = e.target.closest('button')?.dataset.a; if (!a) return;
       try {
+        if (a === 'ph') return CP.profilePhoto({ token, who: 'teacher', student: s, onDone: () => rosterView() });
         if (a === 'cl') return copy(famUrl(s), 'Family link copied');
         if (a === 'cf') return copy(s.id + '/', 'Folder name copied');
         if (a === 'nc') { if (!confirm(`Make a new login code for ${s.name}? Their old code stops working.`)) return; await call('students/' + s.id, { method: 'PATCH', body: { regenCode: true } }); }
