@@ -70,10 +70,10 @@ const randCode = () => Array.from(crypto.getRandomValues(new Uint8Array(6)), (x)
 const cleanCode = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 
 // ---------- database ----------
-let schemaReady;
-function ensureSchema(db) {
+let schemaReady = false; // a plain flag: Workers forbid sharing a promise between requests
+async function ensureSchema(db) {
   if (!schemaReady) {
-    schemaReady = db.batch([
+    await db.batch([
       db.prepare('CREATE TABLE IF NOT EXISTS students(id TEXT PRIMARY KEY, name TEXT NOT NULL, code TEXT NOT NULL UNIQUE, family_token TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL, year INTEGER, pron TEXT)'),
       db.prepare('CREATE TABLE IF NOT EXISTS settings(k TEXT PRIMARY KEY, v TEXT)'),
       db.prepare('CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY, date TEXT NOT NULL, end_date TEXT, time TEXT, title TEXT NOT NULL, note TEXT, kind TEXT NOT NULL DEFAULT \'event\', created_at INTEGER NOT NULL)'),
@@ -90,9 +90,9 @@ function ensureSchema(db) {
       db.prepare('CREATE TABLE IF NOT EXISTS spell_progress(student_id TEXT PRIMARY KEY, list_id TEXT NOT NULL, mastered TEXT NOT NULL DEFAULT \'[]\', carry TEXT NOT NULL DEFAULT \'[]\', words TEXT NOT NULL DEFAULT \'[]\', week_no INTEGER NOT NULL DEFAULT 1, done TEXT NOT NULL DEFAULT \'[]\', finished INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL)'),
       db.prepare('CREATE TABLE IF NOT EXISTS spell_tests(id TEXT PRIMARY KEY, student_id TEXT NOT NULL, list_id TEXT NOT NULL, week_no INTEGER NOT NULL, results TEXT NOT NULL, score INTEGER NOT NULL, total INTEGER NOT NULL, day TEXT, created_at INTEGER NOT NULL)'),
       db.prepare('CREATE INDEX IF NOT EXISTS idx_spell_tests_student ON spell_tests(student_id, created_at)'),
-    ]).catch((e) => { schemaReady = null; throw e; });
+    ]);
+    schemaReady = true;
   }
-  return schemaReady;
 }
 async function locked(db, k) {
   const r = await db.prepare('SELECT until FROM throttle WHERE k=?').bind(k).first();
