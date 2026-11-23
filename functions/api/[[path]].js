@@ -91,6 +91,11 @@ async function ensureSchema(db) {
       db.prepare('CREATE TABLE IF NOT EXISTS spell_tests(id TEXT PRIMARY KEY, student_id TEXT NOT NULL, list_id TEXT NOT NULL, week_no INTEGER NOT NULL, results TEXT NOT NULL, score INTEGER NOT NULL, total INTEGER NOT NULL, day TEXT, created_at INTEGER NOT NULL)'),
       db.prepare('CREATE INDEX IF NOT EXISTS idx_spell_tests_student ON spell_tests(student_id, created_at)'),
     ]);
+    // profile picture columns (added later, so ALTER; a repeat run just reports the column already exists)
+    for (const col of ['avatar_id TEXT', 'avatar_locked INTEGER NOT NULL DEFAULT 0']) {
+      try { await db.prepare('ALTER TABLE students ADD COLUMN ' + col).run(); }
+      catch (e) { if (!/duplicate column|already exists/i.test(String((e && e.message) || e))) throw e; }
+    }
     schemaReady = true;
   }
 }
@@ -146,7 +151,7 @@ const itemOut = (r) => ({
 });
 const safeParse = (s) => { try { return JSON.parse(s); } catch { return null; } };
 const studentOut = (r, withSecrets) => {
-  const o = { id: r.id, name: r.name, createdAt: r.created_at, year: r.year || null, pron: r.pron || null };
+  const o = { id: r.id, name: r.name, createdAt: r.created_at, year: r.year || null, pron: r.pron || null, avatar: r.avatar_id ? '/api/avatar/' + r.avatar_id : null, avatarLocked: !!r.avatar_locked };
   if (withSecrets) { o.code = r.code; o.familyToken = r.family_token; }
   return o;
 };
@@ -270,6 +275,7 @@ export async function onRequest({ request, env }) {
 
     // ----- files (capability URLs: the id is a long random string) -----
     if (a === 'f' && b && m === 'GET') return serveFile(env, request, b);
+    if (a === 'avatar' && b && m === 'GET') return serveAvatar(env, b);
 
     // ----- everything below needs a login -----
     const me = await readToken(env, request);
@@ -309,6 +315,7 @@ export async function onRequest({ request, env }) {
     }
 
     if (a === 'upload' && m === 'POST') return upload(env, request, url, me);
+    if (a === 'avatar' && (m === 'POST' || m === 'PUT' || m === 'DELETE')) return avatarEdit(env, request, url, me, m);
 
     if (a === 'items' && b && (m === 'DELETE' || m === 'PATCH')) {
       const it = await db.prepare('SELECT * FROM items WHERE id=?').bind(b).first();
@@ -369,6 +376,7 @@ export async function onRequest({ request, env }) {
       if (p.name) await db.prepare('UPDATE students SET name=? WHERE id=?').bind(clip(p.name, 60), b).run();
       if ('year' in p) await db.prepare('UPDATE students SET year=? WHERE id=?').bind([3, 4, 5, 6, 7, 8].includes(Number(p.year)) ? Number(p.year) : null, b).run();
       if ('pron' in p) await db.prepare('UPDATE students SET pron=? WHERE id=?').bind(['he', 'she', 'they'].includes(p.pron) ? p.pron : null, b).run();
+      if ('avatarLocked' in p) await db.prepare('UPDATE students SET avatar_locked=? WHERE id=?').bind(p.avatarLocked ? 1 : 0, b).run();
       if (p.regenCode) await db.prepare('UPDATE students SET code=? WHERE id=?').bind(randCode(), b).run();
       if (p.regenFamily) await db.prepare('UPDATE students SET family_token=? WHERE id=?').bind(randId(24), b).run();
       return json({ student: studentOut(await db.prepare('SELECT * FROM students WHERE id=?').bind(b).first(), true) });
@@ -382,6 +390,8 @@ export async function onRequest({ request, env }) {
     if (a === 'students' && b && m === 'DELETE') {
       const rows = (await db.prepare('SELECT id FROM items WHERE student_id=?').bind(b).all()).results;
       for (let i = 0; i < rows.length; i += 500) await env.FILES.delete(rows.slice(i, i + 500).map((r) => b + '/' + r.id));
+      const av = await db.prepare('SELECT avatar_id FROM students WHERE id=?').bind(b).first();
+      if (av && av.avatar_id) await env.FILES.delete('avatars/' + av.avatar_id).catch(() => {});
       await db.batch([db.prepare('DELETE FROM items WHERE student_id=?').bind(b), db.prepare('DELETE FROM checks WHERE student_id=?').bind(b), db.prepare('DELETE FROM reports WHERE student_id=?').bind(b), db.prepare('DELETE FROM mmm_progress WHERE student_id=?').bind(b), db.prepare('DELETE FROM mmm_scores WHERE student_id=?').bind(b), db.prepare('DELETE FROM spell_progress WHERE student_id=?').bind(b), db.prepare('DELETE FROM spell_tests WHERE student_id=?').bind(b), db.prepare('DELETE FROM students WHERE id=?').bind(b)]);
       return json({ ok: true, deleted: rows.length });
     }
@@ -617,6 +627,12 @@ export async function onRequest({ request, env }) {
         const left = await db.prepare('SELECT COUNT(*) c FROM items').first();
         return json({ done: false, remaining: left.c });
       }
+      const avs = (await db.prepare('SELECT id, avatar_id FROM students WHERE avatar_id IS NOT NULL LIMIT 100').all()).results; // profile pictures go too
+      if (avs.length) {
+        await env.FILES.delete(avs.map((r) => 'avatars/' + r.avatar_id));
+        await db.batch(avs.map((r) => db.prepare('UPDATE students SET avatar_id=NULL WHERE id=?').bind(r.id)));
+        return json({ done: false, remaining: avs.length });
+      }
       await db.batch([db.prepare('DELETE FROM students'), db.prepare('DELETE FROM mmm_progress'), db.prepare('DELETE FROM mmm_scores'), db.prepare('DELETE FROM spell_progress'), db.prepare('DELETE FROM spell_tests'), db.prepare('DELETE FROM checks'), db.prepare('DELETE FROM reports'), db.prepare('DELETE FROM settings'), db.prepare('DELETE FROM events'), db.prepare('DELETE FROM throttle')]);
       return json({ done: true, remaining: 0 });
     }
@@ -661,6 +677,34 @@ async function upload(env, request, url, me) {
   await db.prepare('INSERT INTO items(id,student_id,subject,title,kind,app,mime,size,note,teacher_comment,family_visible,sent_by,created_at,meta) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
     .bind(row.id, row.student_id, row.subject, row.title, row.kind, row.app, row.mime, row.size, row.note, null, 1, row.sent_by, row.created_at, row.meta).run();
   return json({ item: itemOut(row) }, 201);
+}
+
+// ---------- profile pictures ----------
+const AVATAR_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
+async function avatarEdit(env, request, url, me, m) {
+  const db = env.DB, teacher = me.role === 'teacher';
+  const sid = teacher ? url.searchParams.get('student') : me.sid;
+  const st = sid && (await db.prepare('SELECT * FROM students WHERE id=?').bind(sid).first());
+  if (!st) return fail(400, 'Choose which student this is for');
+  if (!teacher && st.avatar_locked) return fail(403, 'Your teacher has turned off profile pictures for now.');
+  let newId = null;
+  if (m !== 'DELETE') {
+    const mime = (request.headers.get('Content-Type') || '').split(';')[0].trim().toLowerCase();
+    if (!AVATAR_MIME.has(mime)) return fail(415, 'Please use a JPEG, PNG or WebP picture');
+    const buf = await request.arrayBuffer();
+    if (!buf.byteLength) return fail(400, 'Empty picture');
+    if (buf.byteLength > 1024 * 1024) return fail(413, 'That picture is too big');
+    newId = randId(24);
+    await env.FILES.put('avatars/' + newId, buf, { httpMetadata: { contentType: mime } });
+  }
+  await db.prepare('UPDATE students SET avatar_id=? WHERE id=?').bind(newId, sid).run();
+  if (st.avatar_id) await env.FILES.delete('avatars/' + st.avatar_id).catch(() => {});
+  return json({ student: studentOut(await db.prepare('SELECT * FROM students WHERE id=?').bind(sid).first(), teacher) });
+}
+async function serveAvatar(env, id) {
+  const obj = await env.FILES.get('avatars/' + id);
+  if (!obj) return fail(404, 'Not found');
+  return new Response(obj.body, { headers: { ...CORS, 'Content-Type': (obj.httpMetadata && obj.httpMetadata.contentType) || 'image/jpeg', 'Cache-Control': 'private, max-age=31536000, immutable', 'X-Content-Type-Options': 'nosniff', 'Cross-Origin-Resource-Policy': 'cross-origin' } });
 }
 
 // ---------- file download / streaming (supports Range so iPad video works) ----------
