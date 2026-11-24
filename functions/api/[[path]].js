@@ -123,9 +123,10 @@ const EVENT_KINDS = ['event', 'trip', 'due', 'holiday'];
 const isDay = (x) => typeof x === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(x) && !Number.isNaN(Date.parse(x + 'T00:00:00Z'));
 async function calendarOut(db) {
   const rows = (await db.prepare('SELECT * FROM events ORDER BY date, time, created_at LIMIT 1500').all()).results;
-  const n = {}; for (const r of (await db.prepare("SELECT k,v FROM settings WHERE k IN ('notice','notice_at')").all()).results) n[r.k] = r.v;
+  const n = {}; for (const r of (await db.prepare("SELECT k,v FROM settings WHERE k IN ('notice','notice_at','mv_n','mv_at')").all()).results) n[r.k] = r.v;
   return { events: rows.map((r) => ({ id: r.id, date: r.date, endDate: r.end_date || null, time: r.time || '', title: r.title, note: r.note || '', kind: r.kind })),
-    notice: { text: n.notice || '', at: Number(n.notice_at) || 0 } };
+    notice: { text: n.notice || '', at: Number(n.notice_at) || 0 },
+    verse: { n: Number(n.mv_n) || 0, at: Number(n.mv_at) || 0 } };
 }
 const classOut = (c) => ({ closed: !!c.closedAt, closedAt: c.closedAt, familyUntil: c.familyUntil, showProgress: c.showProgress });
 // Reports keep private notes for the teacher; these never go to families or students.
@@ -540,6 +541,15 @@ export async function onRequest({ request, env }) {
       if (!teacher) return fail(403, 'Teacher only');
       await db.prepare('DELETE FROM events WHERE id=?').bind(b).run();
       return json(await calendarOut(db));
+    }
+    if (a === 'verse' && m === 'PUT') {
+      if (!teacher) return fail(403, 'Teacher only');
+      const p = await request.json().catch(() => ({}));
+      const vn = Math.trunc(Number(p.n)) || 0;
+      if (vn < 0 || vn > 100) return fail(400, 'Unknown verse');
+      await setSetting(db, 'mv_n', vn);
+      await setSetting(db, 'mv_at', vn ? Date.now() : 0);
+      return json({ n: vn, at: vn ? Date.now() : 0 });
     }
     if (a === 'notice' && m === 'PUT') {
       if (!teacher) return fail(403, 'Teacher only');

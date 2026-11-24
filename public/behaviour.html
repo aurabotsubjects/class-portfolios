@@ -31,6 +31,7 @@
   .fb[aria-pressed=true]{opacity:1;transform:scale(1.08);filter:none;background:#fff3e0;box-shadow:0 0 0 3px #1b1b1b}
   .fb:focus-visible{outline:3px solid var(--orange);outline-offset:2px}
   .bkeys{display:flex;gap:34px;flex-wrap:wrap;margin:6px 0 10px}.bkg{display:flex;align-items:flex-start;gap:12px}.bkg>b{width:92px;padding-top:10px;white-space:nowrap}.bkg .ks{display:grid;grid-template-columns:repeat(5,66px);gap:6px}.bkg .k{display:flex;flex-direction:column;align-items:center;gap:2px}.bkg small{display:block;font-weight:700;font-size:.64rem;text-align:center;line-height:1.1;min-height:2.2em}
+  .hd{font-size:.8rem;margin-bottom:4px}.kh .k{display:flex;flex-direction:column;align-items:center;gap:2px;text-transform:none;letter-spacing:0}.kh small{font-size:.62rem;font-weight:700;text-align:center;line-height:1.1;color:#1b1b1b;min-height:2.2em}
   @media(max-width:900px){.hide-s{display:none}}
 </style>
 </head>
@@ -38,7 +39,7 @@
 <header class="top"><div class="in">
   <a class="brand" href="/teacher.html#/"><span class="logo" id="logo"></span><span><b id="bn"></b><small id="bs"></small></span></a>
   <nav class="nav" aria-label="Main">
-    <a href="/teacher.html#/" id="n1"></a><a href="/teacher.html#/roster" id="n2"></a><a href="/mmm.html" id="n9"></a><a href="/spelling.html" id="n10"></a><a href="/behaviour.html" class="on" id="n11"></a>
+    <a href="/teacher.html#/" id="n1"></a><a href="/teacher.html#/roster" id="n2"></a><a href="/mmm.html" id="n9"></a><a href="/spelling.html" id="n10"></a><a href="/behaviour.html" class="on" id="n11"></a><a href="/verse.html" id="n12"></a>
     <button id="out"></button>
   </nav>
 </div></header>
@@ -48,7 +49,7 @@ const { $, $$, svg, esc, CFG, api, store, toast, avColor, initials, firstName } 
 const token = () => store.get('cp_t');
 if (!token()) location.replace('/');
 $('#logo').innerHTML = svg('logo'); $('#bn').textContent = CFG.className + ' Portfolio'; $('#bs').textContent = 'Teacher hub';
-$('#n1').innerHTML = svg('home') + 'Class'; $('#n2').innerHTML = svg('users') + 'Roster'; $('#n9').innerHTML = svg('result') + 'Maths facts'; $('#n10').innerHTML = svg('result') + 'Spelling'; $('#n11').innerHTML = svg('result') + 'Behaviour';
+$('#n1').innerHTML = svg('home') + 'Class'; $('#n2').innerHTML = svg('users') + 'Roster'; $('#n9').innerHTML = svg('result') + 'Maths facts'; $('#n10').innerHTML = svg('result') + 'Spelling'; $('#n11').innerHTML = svg('result') + 'Behaviour'; $('#n12').innerHTML = svg('result') + 'Memory verse';
 $('#out').innerHTML = svg('out') + 'Sign out'; $('#out').onclick = () => { store.del('cp_t'); location.href = '/'; };
 document.title = CFG.className + ' · Behaviour';
 async function call(path, o = {}) {
@@ -65,7 +66,7 @@ async function load() { rows = (await call('behaviour/day?day=' + day)).students
 function draw() {
   if (!rows.length) { app.innerHTML = '<h2>Behaviour</h2><div class="empty"><h3>No students yet</h3><p><a class="btn pri" href="/teacher.html#/roster">Add your class</a></p></div>'; return; }
   const isToday = day === today();
-  const keyGrp = (k, t) => `<div class="bkg"><b>${t}</b><div class="ks">${[1, 2, 3, 4, 5].map((l) => `<div class="k">${CP.face(k, l, 40)}<small>${CP.FACE.LABEL[k][l]}</small></div>`).join('')}</div></div>`;
+  const head = (k, t) => `<div class="hd">${t}</div><div class="fr kh">${[1, 2, 3, 4, 5].map((l) => `<div class="k">${CP.face(k, l, 36)}<small>${CP.FACE.LABEL[k][l]}</small></div>`).join('')}</div>`;
   app.innerHTML = `<h2>Behaviour &amp; work ethic</h2>
     <div class="card"><div class="bbar">
       <button class="btn sm" id="pv" aria-label="Previous day">←</button>
@@ -74,8 +75,7 @@ function draw() {
       <button class="btn sm" id="td" ${isToday ? 'disabled' : ''}>Today</button>
       <span class="sub hide-s" style="margin-left:6px">Click a face to record it for ${isToday ? 'today' : esc(CP.fmtBehDay(day))}. Click the same face again to clear it.</span>
     </div>
-    <div class="bkeys hide-s">${keyGrp('behaviour', 'Behaviour')}${keyGrp('effort', 'Work ethic')}</div>
-    <div style="overflow-x:auto"><table class="bt"><colgroup><col class="c1"><col><col><col class="c4"></colgroup><thead><tr><th>Student</th><th>Behaviour</th><th>Work ethic</th><th></th></tr></thead><tbody>
+    <div style="overflow-x:auto"><table class="bt"><colgroup><col class="c1"><col><col><col class="c4"></colgroup><thead><tr><th style="vertical-align:bottom">Student</th><th>${head('behaviour', 'Behaviour')}</th><th>${head('effort', 'Work ethic')}</th><th></th></tr></thead><tbody>
     ${rows.map((r) => `<tr data-id="${r.id}"><td><div class="nm">${CP.avatarSpan(r, 'av')}${esc(r.name)}</div></td><td><div class="fr">${faceRow(r, 'behaviour')}</div></td><td><div class="fr">${faceRow(r, 'effort')}</div></td><td style="text-align:right"><button class="btn sm hist">Graph</button></td></tr>`).join('')}
     </tbody></table></div></div>`;
   $('#dy').onchange = (e) => { day = e.target.value || today(); load(); };

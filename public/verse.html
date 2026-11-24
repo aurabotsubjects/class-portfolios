@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en-NZ">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Memory verse</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="icon" href="/assets/art/favicon.png"><link rel="apple-touch-icon" href="/assets/art/icon-192.png">
+<link rel="stylesheet" href="/assets/style.css">
+<link rel="stylesheet" href="/assets/theme-bold.css">
+<script src="/assets/config.js"></script>
+<script src="/assets/qrcode.js"></script>
+<script src="/assets/common.js"></script>
+<script src="/assets/verses-data.js"></script>
+<script src="/assets/verse-view.js"></script>
+<style>
+  .vp{display:grid;grid-template-columns:minmax(260px,380px) 1fr;gap:22px;align-items:start}
+  @media(max-width:860px){.vp{grid-template-columns:1fr}}
+  .vp select{width:100%;padding:12px;font-weight:700;font-size:1rem}
+  .vp .row2{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+  .cur{background:#1b1b1b;color:#f5ecd8;border-radius:16px;padding:12px 16px;margin-bottom:14px;font-weight:700}
+  .cur small{display:block;opacity:.7;font-weight:600}
+</style>
+</head>
+<body>
+<header class="top"><div class="in">
+  <a class="brand" href="/teacher.html#/"><span class="logo" id="logo"></span><span><b id="bn"></b><small id="bs"></small></span></a>
+  <nav class="nav" aria-label="Main">
+    <a href="/teacher.html#/" id="n1"></a><a href="/teacher.html#/roster" id="n2"></a><a href="/mmm.html" id="n9"></a><a href="/spelling.html" id="n10"></a><a href="/behaviour.html" id="n11"></a><a href="/verse.html" class="on" id="n12"></a>
+    <button id="out"></button>
+  </nav>
+</div></header>
+<main class="wrap" id="app"><p class="mute">Loading…</p></main>
+<script>
+const { $, svg, esc, CFG, api, store, toast } = CP;
+const token = () => store.get('cp_t');
+if (!token()) location.replace('/');
+$('#logo').innerHTML = svg('logo'); $('#bn').textContent = CFG.className + ' Portfolio'; $('#bs').textContent = 'Teacher hub';
+$('#n1').innerHTML = svg('home') + 'Class'; $('#n2').innerHTML = svg('users') + 'Roster'; $('#n9').innerHTML = svg('result') + 'Maths facts'; $('#n10').innerHTML = svg('result') + 'Spelling'; $('#n11').innerHTML = svg('result') + 'Behaviour'; $('#n12').innerHTML = svg('result') + 'Memory verse';
+$('#out').innerHTML = svg('out') + 'Sign out'; $('#out').onclick = () => { store.del('cp_t'); location.href = '/'; };
+document.title = CFG.className + ' · Memory verse';
+async function call(path, o = {}) {
+  try { return await api(path, Object.assign({ token: token() }, o)); }
+  catch (e) { if (e.status === 401) { store.del('cp_t'); location.href = '/'; } throw e; }
+}
+const app = $('#app'); let cur = null;
+const opts = () => ['love', 'know', 'serve', 'impact'].map((c) => `<optgroup label="${esc(CP.VERSE_CAT[c])}">${CP.VERSES.filter((v) => v.c === c).map((v) => `<option value="${v.n}">#${v.n} — ${esc(v.r)}</option>`).join('')}</optgroup>`).join('');
+function draw(sel) {
+  const v = CP.VERSES.find((x) => x.n === sel);
+  app.innerHTML = `<h2>Memory verse of the week</h2><div class="vp"><div class="card">
+    <div class="cur"><small>Showing to students &amp; parents now</small>${cur ? esc(cur.r) : 'Nothing chosen yet'}</div>
+    <label for="vs"><b>Choose this week's verse</b></label>
+    <select id="vs"><option value="">Select a verse…</option>${opts()}</select>
+    <div class="row2"><button class="btn pri" id="set" ${sel ? '' : 'disabled'}>Set as this week's verse</button><button class="btn" id="clr" ${cur ? '' : 'disabled'}>Clear</button></div>
+  </div><div id="pv">${v ? CP.verseCard(v) : '<p class="mute">Pick a verse to preview it.</p>'}</div></div>`;
+  $('#vs').value = sel || '';
+  $('#vs').onchange = (e) => draw(+e.target.value || 0);
+  $('#set').onclick = async () => { try { await save(sel); toast('Memory verse updated'); } catch (e) { toast(e.message); } };
+  $('#clr').onclick = async () => { try { await save(0); toast('Cleared'); } catch (e) { toast(e.message); } };
+}
+async function save(n) { const r = await call('verse', { method: 'PUT', body: { n } }); cur = r.n ? CP.VERSES.find((v) => v.n === r.n) : null; draw(cur ? cur.n : 0); }
+call('calendar').then((c) => { const n = c.verse && c.verse.n; cur = n ? CP.VERSES.find((v) => v.n === n) : null; draw(cur ? cur.n : 0); }).catch((e) => { app.innerHTML = '<div class="empty"><p>' + esc(e.message) + '</p></div>'; });
+</script>
+</body>
+</html>
