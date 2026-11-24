@@ -19,18 +19,18 @@
 <style>
   .bbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
   .bbar input[type=date]{width:auto;padding:8px 12px;font-weight:700}
-  .bt{width:100%;border-collapse:separate;border-spacing:0 8px}
+  .bt{width:100%;border-collapse:separate;border-spacing:0 8px;table-layout:fixed}.bt col.c1{width:230px}.bt col.c4{width:84px}
   .bt th{font-size:.78rem;text-align:left;font-weight:800;color:var(--mute);padding:0 10px;text-transform:uppercase;letter-spacing:.05em}
   .bt td{background:#fff;padding:8px 10px;vertical-align:middle}
   .bt td:first-child{border-radius:16px 0 0 16px} .bt td:last-child{border-radius:0 16px 16px 0}
   .nm{display:flex;align-items:center;gap:10px;font-weight:800;white-space:nowrap}
   .av{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:.9rem;flex:none;background:var(--c)}
-  .fr{display:flex;gap:4px}
-  .fb{border:0;background:none;padding:2px;border-radius:16px;cursor:pointer;opacity:.4;transform:scale(.9);transition:transform .12s,opacity .12s;filter:grayscale(.35)}
+  .fr{display:grid;grid-template-columns:repeat(5,62px);gap:6px;justify-content:start}
+  .fb{width:62px;height:62px;display:grid;place-items:center;border:0;background:none;padding:2px;border-radius:16px;cursor:pointer;opacity:.4;transform:scale(.9);transition:transform .12s,opacity .12s;filter:grayscale(.35)}
   .fb:hover{opacity:1;transform:scale(1.12) rotate(-3deg);filter:none}
   .fb[aria-pressed=true]{opacity:1;transform:scale(1.08);filter:none;background:#fff3e0;box-shadow:0 0 0 3px #1b1b1b}
   .fb:focus-visible{outline:3px solid var(--orange);outline-offset:2px}
-  .bkeyrow{display:flex;gap:26px;flex-wrap:wrap;margin:0 0 6px}.bkeyrow div{display:flex;gap:2px;align-items:flex-end}.bkeyrow small{display:block;font-weight:700;font-size:.62rem;text-align:center;max-width:56px;line-height:1.1}
+  .bkeys{display:flex;gap:34px;flex-wrap:wrap;margin:6px 0 10px}.bkg{display:flex;align-items:flex-start;gap:12px}.bkg>b{width:92px;padding-top:10px;white-space:nowrap}.bkg .ks{display:grid;grid-template-columns:repeat(5,66px);gap:6px}.bkg .k{display:flex;flex-direction:column;align-items:center;gap:2px}.bkg small{display:block;font-weight:700;font-size:.64rem;text-align:center;line-height:1.1;min-height:2.2em}
   @media(max-width:900px){.hide-s{display:none}}
 </style>
 </head>
@@ -65,7 +65,7 @@ async function load() { rows = (await call('behaviour/day?day=' + day)).students
 function draw() {
   if (!rows.length) { app.innerHTML = '<h2>Behaviour</h2><div class="empty"><h3>No students yet</h3><p><a class="btn pri" href="/teacher.html#/roster">Add your class</a></p></div>'; return; }
   const isToday = day === today();
-  const keyRow = (k) => `<div>${[1, 2, 3, 4, 5].map((l) => `<span>${CP.face(k, l, 38)}<small>${CP.FACE.LABEL[k][l]}</small></span>`).join('')}</div>`;
+  const keyGrp = (k, t) => `<div class="bkg"><b>${t}</b><div class="ks">${[1, 2, 3, 4, 5].map((l) => `<div class="k">${CP.face(k, l, 40)}<small>${CP.FACE.LABEL[k][l]}</small></div>`).join('')}</div></div>`;
   app.innerHTML = `<h2>Behaviour &amp; work ethic</h2>
     <div class="card"><div class="bbar">
       <button class="btn sm" id="pv" aria-label="Previous day">←</button>
@@ -74,10 +74,10 @@ function draw() {
       <button class="btn sm" id="td" ${isToday ? 'disabled' : ''}>Today</button>
       <span class="sub hide-s" style="margin-left:6px">Click a face to record it for ${isToday ? 'today' : esc(CP.fmtBehDay(day))}. Click the same face again to clear it.</span>
     </div>
-    <div class="bkeyrow hide-s"><div><b style="align-self:center;margin-right:6px">Behaviour</b>${keyRow('behaviour').slice(5, -6)}</div><div><b style="align-self:center;margin-right:6px">Work ethic</b>${keyRow('effort').slice(5, -6)}</div></div>
-    <table class="bt"><thead><tr><th>Student</th><th>Behaviour</th><th>Work ethic</th><th></th></tr></thead><tbody>
+    <div class="bkeys hide-s">${keyGrp('behaviour', 'Behaviour')}${keyGrp('effort', 'Work ethic')}</div>
+    <div style="overflow-x:auto"><table class="bt"><colgroup><col class="c1"><col><col><col class="c4"></colgroup><thead><tr><th>Student</th><th>Behaviour</th><th>Work ethic</th><th></th></tr></thead><tbody>
     ${rows.map((r) => `<tr data-id="${r.id}"><td><div class="nm">${CP.avatarSpan(r, 'av')}${esc(r.name)}</div></td><td><div class="fr">${faceRow(r, 'behaviour')}</div></td><td><div class="fr">${faceRow(r, 'effort')}</div></td><td style="text-align:right"><button class="btn sm hist">Graph</button></td></tr>`).join('')}
-    </tbody></table></div>`;
+    </tbody></table></div></div>`;
   $('#dy').onchange = (e) => { day = e.target.value || today(); load(); };
   $('#pv').onclick = () => { day = shift(day, -1); load(); };
   $('#nx').onclick = () => { day = shift(day, 1); if (day > today()) day = today(); load(); };
