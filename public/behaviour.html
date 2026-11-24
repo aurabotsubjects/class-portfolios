@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en-NZ">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Behaviour</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="icon" href="/assets/art/favicon.png"><link rel="apple-touch-icon" href="/assets/art/icon-192.png">
+<link rel="stylesheet" href="/assets/style.css">
+<link rel="stylesheet" href="/assets/theme-bold.css">
+<script src="/assets/config.js"></script>
+<script src="/assets/qrcode.js"></script>
+<script src="/assets/common.js"></script>
+<script src="/assets/faces.js"></script>
+<script src="/assets/behaviour-view.js"></script>
+<script src="/assets/avatar.js"></script>
+<style>
+  .bbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+  .bbar input[type=date]{width:auto;padding:8px 12px;font-weight:700}
+  .bt{width:100%;border-collapse:separate;border-spacing:0 8px}
+  .bt th{font-size:.78rem;text-align:left;font-weight:800;color:var(--mute);padding:0 10px;text-transform:uppercase;letter-spacing:.05em}
+  .bt td{background:#fff;padding:8px 10px;vertical-align:middle}
+  .bt td:first-child{border-radius:16px 0 0 16px} .bt td:last-child{border-radius:0 16px 16px 0}
+  .nm{display:flex;align-items:center;gap:10px;font-weight:800;white-space:nowrap}
+  .av{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:.9rem;flex:none;background:var(--c)}
+  .fr{display:flex;gap:4px}
+  .fb{border:0;background:none;padding:2px;border-radius:16px;cursor:pointer;opacity:.4;transform:scale(.9);transition:transform .12s,opacity .12s;filter:grayscale(.35)}
+  .fb:hover{opacity:1;transform:scale(1.12) rotate(-3deg);filter:none}
+  .fb[aria-pressed=true]{opacity:1;transform:scale(1.08);filter:none;background:#fff3e0;box-shadow:0 0 0 3px #1b1b1b}
+  .fb:focus-visible{outline:3px solid var(--orange);outline-offset:2px}
+  .bkeyrow{display:flex;gap:26px;flex-wrap:wrap;margin:0 0 6px}.bkeyrow div{display:flex;gap:2px;align-items:flex-end}.bkeyrow small{display:block;font-weight:700;font-size:.62rem;text-align:center;max-width:56px;line-height:1.1}
+  @media(max-width:900px){.hide-s{display:none}}
+</style>
+</head>
+<body>
+<header class="top"><div class="in">
+  <a class="brand" href="/teacher.html#/"><span class="logo" id="logo"></span><span><b id="bn"></b><small id="bs"></small></span></a>
+  <nav class="nav" aria-label="Main">
+    <a href="/teacher.html#/" id="n1"></a><a href="/teacher.html#/roster" id="n2"></a><a href="/mmm.html" id="n9"></a><a href="/spelling.html" id="n10"></a><a href="/behaviour.html" class="on" id="n11"></a>
+    <button id="out"></button>
+  </nav>
+</div></header>
+<main class="wrap" id="app"><p class="mute">Loading…</p></main>
+<script>
+const { $, $$, svg, esc, CFG, api, store, toast, avColor, initials, firstName } = CP;
+const token = () => store.get('cp_t');
+if (!token()) location.replace('/');
+$('#logo').innerHTML = svg('logo'); $('#bn').textContent = CFG.className + ' Portfolio'; $('#bs').textContent = 'Teacher hub';
+$('#n1').innerHTML = svg('home') + 'Class'; $('#n2').innerHTML = svg('users') + 'Roster'; $('#n9').innerHTML = svg('result') + 'Maths facts'; $('#n10').innerHTML = svg('result') + 'Spelling'; $('#n11').innerHTML = svg('result') + 'Behaviour';
+$('#out').innerHTML = svg('out') + 'Sign out'; $('#out').onclick = () => { store.del('cp_t'); location.href = '/'; };
+document.title = CFG.className + ' · Behaviour';
+async function call(path, o = {}) {
+  try { return await api(path, Object.assign({ token: token() }, o)); }
+  catch (e) { if (e.status === 401) { store.del('cp_t'); location.href = '/'; } throw e; }
+}
+const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Pacific/Auckland' });
+const shift = (day, n) => { const d = new Date(day + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toLocaleDateString('en-CA'); };
+let day = today(), rows = [];
+const app = $('#app');
+const faceRow = (r, k) => [1, 2, 3, 4, 5].map((l) => `<button class="fb" type="button" data-k="${k}" data-l="${l}" aria-pressed="${r[k] === l}" aria-label="${CP.FACE.LABEL[k][l]}" title="${CP.FACE.LABEL[k][l]}">${CP.face(k, l, 54)}</button>`).join('');
+
+async function load() { rows = (await call('behaviour/day?day=' + day)).students; draw(); }
+function draw() {
+  if (!rows.length) { app.innerHTML = '<h2>Behaviour</h2><div class="empty"><h3>No students yet</h3><p><a class="btn pri" href="/teacher.html#/roster">Add your class</a></p></div>'; return; }
+  const isToday = day === today();
+  const keyRow = (k) => `<div>${[1, 2, 3, 4, 5].map((l) => `<span>${CP.face(k, l, 38)}<small>${CP.FACE.LABEL[k][l]}</small></span>`).join('')}</div>`;
+  app.innerHTML = `<h2>Behaviour &amp; work ethic</h2>
+    <div class="card"><div class="bbar">
+      <button class="btn sm" id="pv" aria-label="Previous day">←</button>
+      <input type="date" id="dy" value="${day}" max="${today()}" aria-label="Day">
+      <button class="btn sm" id="nx" aria-label="Next day" ${isToday ? 'disabled' : ''}>→</button>
+      <button class="btn sm" id="td" ${isToday ? 'disabled' : ''}>Today</button>
+      <span class="sub hide-s" style="margin-left:6px">Click a face to record it for ${isToday ? 'today' : esc(CP.fmtBehDay(day))}. Click the same face again to clear it.</span>
+    </div>
+    <div class="bkeyrow hide-s"><div><b style="align-self:center;margin-right:6px">Behaviour</b>${keyRow('behaviour').slice(5, -6)}</div><div><b style="align-self:center;margin-right:6px">Work ethic</b>${keyRow('effort').slice(5, -6)}</div></div>
+    <table class="bt"><thead><tr><th>Student</th><th>Behaviour</th><th>Work ethic</th><th></th></tr></thead><tbody>
+    ${rows.map((r) => `<tr data-id="${r.id}"><td><div class="nm">${CP.avatarSpan(r, 'av')}${esc(r.name)}</div></td><td><div class="fr">${faceRow(r, 'behaviour')}</div></td><td><div class="fr">${faceRow(r, 'effort')}</div></td><td style="text-align:right"><button class="btn sm hist">Graph</button></td></tr>`).join('')}
+    </tbody></table></div>`;
+  $('#dy').onchange = (e) => { day = e.target.value || today(); load(); };
+  $('#pv').onclick = () => { day = shift(day, -1); load(); };
+  $('#nx').onclick = () => { day = shift(day, 1); if (day > today()) day = today(); load(); };
+  $('#td').onclick = () => { day = today(); load(); };
+  $$('.fb').forEach((b) => (b.onclick = async () => {
+    const r = rows.find((x) => x.id === b.closest('tr').dataset.id), k = b.dataset.k, l = +b.dataset.l, was = r[k], next = was === l ? null : l;
+    r[k] = next; $$('.fb', b.closest('td')).forEach((x) => x.setAttribute('aria-pressed', +x.dataset.l === next));
+    try { await call('behaviour', { method: 'PUT', body: { studentId: r.id, kind: k, level: next, day } }); }
+    catch (e) { r[k] = was; $$('.fb', b.closest('td')).forEach((x) => x.setAttribute('aria-pressed', +x.dataset.l === was)); toast(e.message); }
+  }));
+  $$('.hist').forEach((b) => (b.onclick = () => graph(rows.find((x) => x.id === b.closest('tr').dataset.id))));
+}
+async function graph(r) {
+  const m = document.createElement('div'); m.className = 'modal'; m.setAttribute('role', 'dialog');
+  m.innerHTML = `<div class="card" style="width:min(780px,96vw);max-height:92vh;overflow:auto"><div class="row"><h3 class="grow" style="margin:0">${esc(r.name)}</h3><button class="btn sm" id="x">Close</button></div><p class="mute">Loading…</p></div>`;
+  document.body.appendChild(m); m.onclick = (e) => { if (e.target === m) m.remove(); }; m.querySelector('#x').onclick = () => m.remove();
+  try {
+    const { entries } = await call('behaviour/student/' + r.id);
+    m.querySelector('.card').innerHTML = `<div class="row"><h3 class="grow" style="margin:0">${esc(r.name)} — behaviour &amp; work ethic</h3><button class="btn sm" id="x">Close</button></div><div style="margin-top:10px">${CP.behaviourChart(entries, {})}</div>`;
+    m.querySelector('#x').onclick = () => m.remove();
+  } catch (e) { toast(e.message); m.remove(); }
+}
+load().catch((e) => { app.innerHTML = '<div class="empty"><p>' + esc(e.message) + '</p></div>'; });
+</script>
+</body>
+</html>

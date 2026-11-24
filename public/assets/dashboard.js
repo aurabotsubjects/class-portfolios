@@ -14,6 +14,7 @@
     cal: P('<rect x="3.500" y="5" width="17" height="15" rx="2.500"/><path d="M8 3v4M16 3v4M3.500 10h17"/>'),
     chart: P('<path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/>'),
     spell: P('<path d="M4 19.500V5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2.500zM8 8h7M8 12h5"/>'),
+    smile: P('<circle cx="12" cy="12" r="9"/><path d="M8 14s1.500 2.500 4 2.500 4-2.500 4-2.500M9 9.500h.01M15 9.500h.01"/>'),
     facts: P('<rect x="5" y="3" width="14" height="18" rx="2.500"/><path d="M8.500 7h7M9 12h.01M12 12h.01M15 12h.01M9 16h.01M12 16h.01M15 16h.01"/>'),
     dl: P('<path d="M12 4v11M7 11l5 5 5-5M5 20h14"/>'), print: P('<path d="M7 9V3h10v6M7 17H4v-7h16v7h-3M7 14h10v7H7z"/>'), grid: P('<path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/>'), out: P('<path d="M9 4H5v16h4M16 8l4 4-4 4M20 12H9"/>')
   };
@@ -27,8 +28,9 @@
     const closing = d.class && d.class.closed ? `<div class="dclosed"><b>This school year's portfolio has finished.</b> ${d.class.familyUntil ? 'You can keep viewing and downloading until <b>' + esc(fmtDate(d.class.familyUntil)) + '</b>. ' : ''}Please download ${esc(name)}'s work to keep.</div>` : '';
     const cal = d.calendar || { events: [], notice: {} };
     const hasFacts = !!(d.mmm && d.mmm.mode && window.MMM && CP.mmmView);
+    const hasBeh = Array.isArray(d.behaviour) && !!CP.behaviourView && !!CP.face;
     const hasSpell = !!(d.spell && d.spell.listId && window.SPELL && CP.spellView);
-    const nav = [['home', 'home', 'My Portfolio'], ['cal', 'calendar', 'Calendar'], ['learn', 'learn', 'My Learning'], ['bulb', 'ideas', rep && o.who === 'family' ? 'Ideas for home' : 'Next steps']].concat(hasFacts ? [['facts', 'facts', 'Maths Facts']] : [], hasSpell ? [['spell', 'spell', 'Spelling']] : [], subs.map((s) => [s, 's:' + s, s]));
+    const nav = [['home', 'home', 'My Portfolio'], ['cal', 'calendar', 'Calendar'], ['learn', 'learn', 'My Learning'], ['bulb', 'ideas', rep && o.who === 'family' ? 'Ideas for home' : 'Next steps']].concat(hasFacts ? [['facts', 'facts', 'Maths Facts']] : [], hasSpell ? [['spell', 'spell', 'Spelling']] : [], hasBeh ? [['smile', 'behaviour', 'Behaviour']] : [], subs.map((s) => [s, 's:' + s, s]));
     const canEdit = o.who === 'student' && !!(o.pfOpts && o.pfOpts.token) && !!CP.addWork;
     const kia = o.who === 'student' ? 'Kia ora,' : 'Kia ora, whānau of';
     root.innerHTML = `${closing}<div class="dash"><div class="dtop"><span class="dlogo">${svg('logo')}</span><b>${esc(CFG.className)} Portfolio</b><span class="grow"></span>
@@ -53,7 +55,9 @@
       home() {
         const spellTile = hasSpell ? `<button class="dtile" data-go="spell" aria-label="Spelling"><span class="di">${ICON.spell}</span><span class="dl">Spelling</span><span class="dn">${esc(CP.spellLabel(d.spell))}</span></button>` : '';
         const factsTile = hasFacts ? `<button class="dtile" data-go="facts" aria-label="Maths Facts"><span class="di">${ICON.facts}</span><span class="dl">Maths Facts</span><span class="dn">${esc(CP.mmmLabel(d.mmm))}</span></button>` : '';
-        main.innerHTML = `<div class="dtiles">${subs.map((s) => tile(s, cnt(s))).join('')}${factsTile}${spellTile}</div><h2 class="dh2">Recent work</h2><div id="drec" class="grid c4"></div>`;
+        const lastB = hasBeh ? d.behaviour.filter((e) => e.kind === 'behaviour').slice(-1)[0] : null;
+        const behTile = hasBeh ? `<button class="dtile" data-go="behaviour" aria-label="Behaviour"><span class="di">${lastB ? CP.face('behaviour', lastB.level, 44) : ICON.smile}</span><span class="dl">Behaviour</span><span class="dn">${lastB ? esc(CP.FACE.LABEL.behaviour[lastB.level]) : 'Not yet'}</span></button>` : '';
+        main.innerHTML = `<div class="dtiles">${subs.map((s) => tile(s, cnt(s))).join('')}${factsTile}${spellTile}${behTile}</div><h2 class="dh2">Recent work</h2><div id="drec" class="grid c4"></div>`;
         const box = main.querySelector('#drec'), list = items.slice().sort((a, b) => b.createdAt - a.createdAt).slice(0, 8);
         if (!list.length) box.outerHTML = `<div class="card dcard dempty"><img src="/assets/art/empty-camera.png" alt=""><div><h3>Nothing here yet</h3><p>${esc((o.pfOpts && o.pfOpts.emptyText) || 'Work will appear here once it has been saved.')}</p></div></div>`;
         else list.forEach((it) => box.appendChild(workCard(it, Object.assign({}, o.pfOpts, { onChange: (n, old) => { if (!n) items.splice(items.indexOf(old), 1); show('home'); } }))));
@@ -81,6 +85,7 @@
         main.innerHTML = card(h);
       },
       spell() { CP.spellView(main, d, { who: o.who }); },
+      behaviour() { CP.behaviourView(main, d, { who: o.who }); },
       facts() { CP.mmmView(main, d, { who: o.who, token: o.pfOpts && o.pfOpts.token, onSaved: () => show('facts') }); },
       work() { subject(null); },
     };

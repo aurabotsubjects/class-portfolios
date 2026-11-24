@@ -90,6 +90,7 @@ async function ensureSchema(db) {
       db.prepare('CREATE TABLE IF NOT EXISTS spell_progress(student_id TEXT PRIMARY KEY, list_id TEXT NOT NULL, mastered TEXT NOT NULL DEFAULT \'[]\', carry TEXT NOT NULL DEFAULT \'[]\', words TEXT NOT NULL DEFAULT \'[]\', week_no INTEGER NOT NULL DEFAULT 1, done TEXT NOT NULL DEFAULT \'[]\', finished INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL)'),
       db.prepare('CREATE TABLE IF NOT EXISTS spell_tests(id TEXT PRIMARY KEY, student_id TEXT NOT NULL, list_id TEXT NOT NULL, week_no INTEGER NOT NULL, results TEXT NOT NULL, score INTEGER NOT NULL, total INTEGER NOT NULL, day TEXT, created_at INTEGER NOT NULL)'),
       db.prepare('CREATE INDEX IF NOT EXISTS idx_spell_tests_student ON spell_tests(student_id, created_at)'),
+      db.prepare('CREATE TABLE IF NOT EXISTS behaviour(student_id TEXT NOT NULL, kind TEXT NOT NULL, day TEXT NOT NULL, level INTEGER NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY(student_id,kind,day))'),
     ]);
     // profile picture columns (added later, so ALTER; a repeat run just reports the column already exists)
     for (const col of ['avatar_id TEXT', 'avatar_locked INTEGER NOT NULL DEFAULT 0']) {
@@ -270,7 +271,7 @@ export async function onRequest({ request, env }) {
       const cls = await getSettings(db);
       if (cls.closedAt && cls.familyUntil && Date.now() > cls.familyUntil) return json({ error: 'This class portfolio has now closed. Please contact your child\'s school if you need a copy of their work.', expired: true }, 410);
       const rows = await db.prepare('SELECT * FROM items WHERE student_id=? AND family_visible=1 ORDER BY created_at DESC').bind(st.id).all();
-      return json({ student: studentOut(st), items: rows.results.map(itemOut), reports: await visibleReports(db, st.id), checks: cls.showProgress ? await checksOf(db, st.id) : null, class: classOut(cls), calendar: await calendarOut(db), mmm: await mmmFor(db, st.id), spell: await spellFor(db, st.id) });
+      return json({ student: studentOut(st), items: rows.results.map(itemOut), reports: await visibleReports(db, st.id), checks: cls.showProgress ? await checksOf(db, st.id) : null, class: classOut(cls), calendar: await calendarOut(db), behaviour: await behaviourFor(db, st.id), mmm: await mmmFor(db, st.id), spell: await spellFor(db, st.id) });
     }
 
     // ----- files (capability URLs: the id is a long random string) -----
@@ -294,7 +295,7 @@ export async function onRequest({ request, env }) {
       if (!st) return fail(401, 'Please sign in');
       const rows = await db.prepare('SELECT * FROM items WHERE student_id=? ORDER BY created_at DESC').bind(me.sid).all();
       const cls = await getSettings(db);
-      return json({ student: studentOut(st), items: rows.results.map(itemOut), reports: await visibleReports(db, st.id), checks: cls.showProgress ? await checksOf(db, st.id) : null, calendar: await calendarOut(db), mmm: await mmmFor(db, st.id), spell: await spellFor(db, st.id) });
+      return json({ student: studentOut(st), items: rows.results.map(itemOut), reports: await visibleReports(db, st.id), checks: cls.showProgress ? await checksOf(db, st.id) : null, calendar: await calendarOut(db), behaviour: await behaviourFor(db, st.id), mmm: await mmmFor(db, st.id), spell: await spellFor(db, st.id) });
     }
 
     if (a === 'roster' && m === 'GET' && teacher) { // names only, for the widget's "send to…" picker
@@ -315,6 +316,28 @@ export async function onRequest({ request, env }) {
     }
 
     if (a === 'upload' && m === 'POST') return upload(env, request, url, me);
+    if (a === 'behaviour') {
+      if (!teacher) return fail(403, 'Teacher only');
+      if (b === 'day' && m === 'GET') {
+        const day = validDay(url.searchParams.get('day')) ? url.searchParams.get('day') : nzToday();
+        const studs = (await db.prepare('SELECT * FROM students ORDER BY name COLLATE NOCASE').all()).results;
+        const rows = (await db.prepare('SELECT student_id, kind, level FROM behaviour WHERE day=?').bind(day).all()).results;
+        const at = (sid, k) => { const r = rows.find((x) => x.student_id === sid && x.kind === k); return r ? r.level : null; };
+        return json({ day, students: studs.map((st) => ({ ...studentOut(st), behaviour: at(st.id, 'behaviour'), effort: at(st.id, 'effort') })) });
+      }
+      if (b === 'student' && c && m === 'GET') return json({ entries: await behaviourFor(db, c) });
+      if (!b && m === 'PUT') {
+        const p = await request.json().catch(() => ({}));
+        const day = validDay(p.day) ? p.day : nzToday();
+        if (!['behaviour', 'effort'].includes(p.kind)) return fail(400, 'Unknown kind');
+        if (!(await db.prepare('SELECT id FROM students WHERE id=?').bind(p.studentId).first())) return fail(400, 'Choose a student');
+        if (p.level === null || p.level === undefined) { await db.prepare('DELETE FROM behaviour WHERE student_id=? AND kind=? AND day=?').bind(p.studentId, p.kind, day).run(); return json({ ok: true }); }
+        const lv = Number(p.level);
+        if (!Number.isInteger(lv) || lv < 1 || lv > 5) return fail(400, 'Level must be 1 to 5');
+        await db.prepare('INSERT INTO behaviour(student_id,kind,day,level,created_at) VALUES(?,?,?,?,?) ON CONFLICT(student_id,kind,day) DO UPDATE SET level=excluded.level, created_at=excluded.created_at').bind(p.studentId, p.kind, day, lv, Date.now()).run();
+        return json({ ok: true });
+      }
+    }
     if (a === 'avatar' && (m === 'POST' || m === 'PUT' || m === 'DELETE')) return avatarEdit(env, request, url, me, m);
 
     if (a === 'items' && b && (m === 'DELETE' || m === 'PATCH')) {
@@ -392,7 +415,7 @@ export async function onRequest({ request, env }) {
       for (let i = 0; i < rows.length; i += 500) await env.FILES.delete(rows.slice(i, i + 500).map((r) => b + '/' + r.id));
       const av = await db.prepare('SELECT avatar_id FROM students WHERE id=?').bind(b).first();
       if (av && av.avatar_id) await env.FILES.delete('avatars/' + av.avatar_id).catch(() => {});
-      await db.batch([db.prepare('DELETE FROM items WHERE student_id=?').bind(b), db.prepare('DELETE FROM checks WHERE student_id=?').bind(b), db.prepare('DELETE FROM reports WHERE student_id=?').bind(b), db.prepare('DELETE FROM mmm_progress WHERE student_id=?').bind(b), db.prepare('DELETE FROM mmm_scores WHERE student_id=?').bind(b), db.prepare('DELETE FROM spell_progress WHERE student_id=?').bind(b), db.prepare('DELETE FROM spell_tests WHERE student_id=?').bind(b), db.prepare('DELETE FROM students WHERE id=?').bind(b)]);
+      await db.batch([db.prepare('DELETE FROM items WHERE student_id=?').bind(b), db.prepare('DELETE FROM checks WHERE student_id=?').bind(b), db.prepare('DELETE FROM reports WHERE student_id=?').bind(b), db.prepare('DELETE FROM behaviour WHERE student_id=?').bind(b), db.prepare('DELETE FROM mmm_progress WHERE student_id=?').bind(b), db.prepare('DELETE FROM mmm_scores WHERE student_id=?').bind(b), db.prepare('DELETE FROM spell_progress WHERE student_id=?').bind(b), db.prepare('DELETE FROM spell_tests WHERE student_id=?').bind(b), db.prepare('DELETE FROM students WHERE id=?').bind(b)]);
       return json({ ok: true, deleted: rows.length });
     }
     // ----- Mad Maths Minute (teacher) -----
@@ -633,7 +656,7 @@ export async function onRequest({ request, env }) {
         await db.batch(avs.map((r) => db.prepare('UPDATE students SET avatar_id=NULL WHERE id=?').bind(r.id)));
         return json({ done: false, remaining: avs.length });
       }
-      await db.batch([db.prepare('DELETE FROM students'), db.prepare('DELETE FROM mmm_progress'), db.prepare('DELETE FROM mmm_scores'), db.prepare('DELETE FROM spell_progress'), db.prepare('DELETE FROM spell_tests'), db.prepare('DELETE FROM checks'), db.prepare('DELETE FROM reports'), db.prepare('DELETE FROM settings'), db.prepare('DELETE FROM events'), db.prepare('DELETE FROM throttle')]);
+      await db.batch([db.prepare('DELETE FROM students'), db.prepare('DELETE FROM behaviour'), db.prepare('DELETE FROM mmm_progress'), db.prepare('DELETE FROM mmm_scores'), db.prepare('DELETE FROM spell_progress'), db.prepare('DELETE FROM spell_tests'), db.prepare('DELETE FROM checks'), db.prepare('DELETE FROM reports'), db.prepare('DELETE FROM settings'), db.prepare('DELETE FROM events'), db.prepare('DELETE FROM throttle')]);
       return json({ done: true, remaining: 0 });
     }
 
@@ -678,6 +701,10 @@ async function upload(env, request, url, me) {
     .bind(row.id, row.student_id, row.subject, row.title, row.kind, row.app, row.mime, row.size, row.note, null, 1, row.sent_by, row.created_at, row.meta).run();
   return json({ item: itemOut(row) }, 201);
 }
+
+// ---------- behaviour & work-ethic entries ----------
+const behaviourFor = async (db, sid) => (await db.prepare('SELECT kind, level, day FROM behaviour WHERE student_id=? ORDER BY day ASC LIMIT 600').bind(sid).all()).results;
+const validDay = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d || '') && !isNaN(Date.parse(d));
 
 // ---------- profile pictures ----------
 const AVATAR_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
