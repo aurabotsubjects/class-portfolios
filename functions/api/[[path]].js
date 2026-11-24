@@ -546,7 +546,7 @@ export async function onRequest({ request, env }) {
       if (!teacher) return fail(403, 'Teacher only');
       const p = await request.json().catch(() => ({}));
       const vn = Math.trunc(Number(p.n)) || 0;
-      if (vn < 0 || vn > 100) return fail(400, 'Unknown verse');
+      if (vn < 0 || vn > 101) return fail(400, 'Unknown verse');
       await setSetting(db, 'mv_n', vn);
       await setSetting(db, 'mv_at', vn ? Date.now() : 0);
       return json({ n: vn, at: vn ? Date.now() : 0 });
