@@ -11,7 +11,7 @@
   const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
   const find = (n) => (CP.VERSES || []).find((v) => v.n === n);
   const date = (at) => at ? new Date(at).toLocaleDateString('en-NZ', { day: 'numeric', month: 'long', timeZone: 'Pacific/Auckland' }) : '';
-  CP.verseCard = (v, at) => `<div class="mvc" style="--mvc:${CP.VERSE_COL[v.c] || '#ffd23f'}"><span class="mvk">${esc(CP.VERSE_CAT[v.c] || '')}</span><p class="mvt">${esc(v.t)}</p><div class="mvr">${esc(v.r)}</div>${at ? `<div class="mvs">Set ${esc(date(at))}</div>` : ''}</div>`;
+  CP.verseCard = (v, at) => `<div class="mvc" style="--mvc:${CP.VERSE_COL[v.c] || '#ffd23f'}"><span class="mvk">${esc(CP.VERSE_CAT[v.c] || '')}</span>${v.n === 101 ? ' <span class="mvk" style="--mvc:#ffd23f">\u2605 Mr Clark\u2019s favourite</span>' : ''}<p class="mvt">${esc(v.t)}</p><div class="mvr">${esc(v.r)}</div>${at ? `<div class="mvs">Set ${esc(date(at))}</div>` : ''}</div>`;
   CP.currentVerse = (d) => { const x = d && d.calendar && d.calendar.verse; return x && x.n ? Object.assign({ at: x.at }, find(x.n)) : null; };
   CP.verseView = (main, d) => {
     const v = CP.currentVerse(d);

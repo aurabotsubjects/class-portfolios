@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en-NZ">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Curriculum tick-off</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="icon" href="/assets/art/favicon.png"><link rel="apple-touch-icon" href="/assets/art/icon-192.png">
+<link rel="stylesheet" href="/assets/style.css">
+<link rel="stylesheet" href="/assets/theme-bold.css">
+<script src="/assets/config.js"></script>
+<script src="/assets/qrcode.js"></script>
+<script src="/assets/common.js"></script>
+<script src="/assets/nzc-data.js"></script>
+<script src="/assets/exceljs.min.js"></script>
+<style>
+  .cw{display:grid;grid-template-columns:260px 1fr;gap:20px;align-items:start}
+  @media(max-width:860px){.cw{grid-template-columns:1fr}}
+  .sl{display:flex;flex-direction:column;gap:6px;max-height:70vh;overflow:auto}
+  .sl button{text-align:left;padding:9px 12px;border:2px solid var(--line);border-radius:12px;background:var(--paper);font-weight:700;cursor:pointer;display:flex;justify-content:space-between;gap:8px}
+  .sl button.on{background:var(--acc)}
+  .sl small{font-weight:600;opacity:.7}
+  .yr{display:inline-flex;gap:6px;align-items:center;font-weight:700}
+  .yr button{padding:6px 14px;border:2px solid var(--line);border-radius:10px;background:var(--paper);font-weight:800;cursor:pointer}
+  .yr button.on{background:var(--acc)}
+  .at{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}
+  .at button{padding:7px 12px;border:2px solid var(--line);border-radius:999px;background:var(--paper);font-weight:700;cursor:pointer;font-size:.9rem}
+  .at button.on{background:var(--acc)}
+  .st{margin:14px 0 4px;font-weight:800}
+  .ob{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border-radius:10px;border:1.5px solid #e4dec9;margin:4px 0;background:#fffdf6}
+  .ob input{width:22px;height:22px;margin-top:1px;flex:none;cursor:pointer}
+  .ob.done{background:#e6f5e3;border-color:#9bd08f}
+  .ob.off{opacity:.5;background:#eee}
+  .ob .t{flex:1}
+  .ob small{display:block;color:#7a735c}
+  .ob .na{font-size:.78rem;border:1.5px solid var(--line);border-radius:8px;background:var(--paper);cursor:pointer;padding:2px 8px;font-weight:700}
+  .pb{height:10px;border-radius:6px;background:#e4dec9;overflow:hidden;margin:6px 0 2px}.pb i{display:block;height:100%;background:#4caf50}
+  textarea.imp{width:100%;min-height:90px;font-family:monospace;font-size:.85rem}
+  .tools{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+</style>
+</head>
+<body>
+<header class="top"><div class="in">
+  <a class="brand" href="/teacher.html#/"><span class="logo" id="logo"></span><span><b id="bn"></b><small id="bs"></small></span></a>
+  <nav class="nav" aria-label="Main">
+    <a href="/teacher.html#/" id="n1"></a><a href="/teacher.html#/roster" id="n2"></a><a href="/mmm.html" id="n9"></a><a href="/spelling.html" id="n10"></a><a href="/behaviour.html" id="n11"></a><a href="/verse.html" id="n12"></a><a href="/curriculum.html" class="on" id="n13"></a>
+    <button id="out"></button>
+  </nav>
+</div></header>
+<main class="wrap" id="app"><p class="mute">Loading…</p></main>
+<script>
+const { $, svg, esc, CFG, api, store, toast } = CP;
+const token = () => store.get('cp_t');
+if (!token()) location.replace('/');
+$('#logo').innerHTML = svg('logo'); $('#bn').textContent = CFG.className + ' Portfolio'; $('#bs').textContent = 'Teacher hub';
+['n1:home:Class','n2:users:Roster','n9:result:Maths facts','n10:result:Spelling','n11:result:Behaviour','n12:result:Memory verse','n13:result:Curriculum'].forEach((x) => { const [i, ic, t] = x.split(':'); $('#' + i).innerHTML = svg(ic) + t; });
+$('#out').innerHTML = svg('out') + 'Sign out'; $('#out').onclick = () => { store.del('cp_t'); location.href = '/'; };
+document.title = CFG.className + ' · Curriculum tick-off';
+async function call(path, o = {}) {
+  try { return await api(path, Object.assign({ token: token() }, o)); }
+  catch (e) { if (e.status === 401) { store.del('cp_t'); location.href = '/'; } throw e; }
+}
+const N = window.NZC, K = N.key;
+const app = $('#app');
+let students = [], sel = null, checks = {}, off = new Set(), area = 'MA', busy = false;
+const yearOf = (s) => (s && (s.year === 5 || s.year === 6) ? s.year : 0);
+const done = (id) => checks[K(id)] === 2;
+function stats(list) { const live = list.filter((o) => !off.has(o.id)); const d = live.filter((o) => done(o.id)).length; return { n: live.length, d, pct: live.length ? Math.round(d / live.length * 100) : 0 }; }
+const objs = (y, ak) => N.forYear(y).filter((o) => !ak || o.area === ak);
+
+async function loadStudent(id) {
+  sel = students.find((s) => s.id === id); checks = {};
+  draw();
+  try { const r = await call('students/' + id + '/progress'); checks = r.checks || {}; } catch (e) { toast(e.message); }
+  draw();
+}
+async function setYear(y) {
+  try { await call('students/' + sel.id, { method: 'PATCH', body: { year: y } }); sel.year = y; toast('Year ' + y + ' saved for ' + sel.name); draw(); } catch (e) { toast(e.message); }
+}
+async function saveTicks(changes) {
+  const ents = Object.entries(changes);
+  for (let i = 0; i < ents.length; i += 70) await call('students/' + sel.id + '/checks', { method: 'PUT', body: { changes: Object.fromEntries(ents.slice(i, i + 70)) } });
+}
+async function tick(id, on) {
+  const prev = checks[K(id)]; checks[K(id)] = on ? 2 : 0; draw(true);
+  try { await saveTicks({ [K(id)]: on ? 2 : 0 }); } catch (e) { checks[K(id)] = prev; toast(e.message); draw(true); }
+}
+async function toggleOff(id) {
+  off.has(id) ? off.delete(id) : off.add(id); draw(true);
+  try { await call('nzc/off', { method: 'PUT', body: { off: [...off] } }); } catch (e) { toast(e.message); }
+}
+
+function draw(keep) {
+  const y = yearOf(sel), sy = window.scrollY;
+  const list = `<div class="card"><div class="sl">${students.map((s) => `<button data-id="${s.id}" class="${sel && s.id === sel.id ? 'on' : ''}"><span>${esc(s.name)}</span><small>${yearOf(s) ? 'Y' + yearOf(s) : 'set year'}</small></button>`).join('') || '<p class="mute">No students yet.</p>'}</div>
+    <div class="tools"><button class="btn" id="dlc">${svg('dl')} Whole class (.xlsx)</button></div></div>`;
+  let main = '<div class="card"><p class="mute">Pick a student to tick off curriculum objectives.</p></div>';
+  if (sel) {
+    const ys = `<span class="yr">Year level: <button data-y="5" class="${y === 5 ? 'on' : ''}">5</button><button data-y="6" class="${y === 6 ? 'on' : ''}">6</button></span>`;
+    if (!y) main = `<div class="card"><h3 style="margin-top:0">${esc(sel.name)}</h3><p>Choose ${esc(sel.name)}'s year level so the right objectives show.</p>${ys}</div>`;
+    else {
+      const all = stats(objs(y));
+      const tabs = N.areas.map((a) => { const s = stats(objs(y, a.k)); return `<button data-a="${a.k}" class="${a.k === area ? 'on' : ''}">${esc(a.name)} · ${s.pct}%</button>`; }).join('');
+      const A = N.areas.find((a) => a.k === area);
+      const body = A.strands.map((s) => `<div class="st">${esc(s.name)}</div>` + objs(y, A.k).filter((o) => o.strand === s.k).map((o) => `<div class="ob ${done(o.id) && !off.has(o.id) ? 'done' : ''} ${off.has(o.id) ? 'off' : ''}"><input type="checkbox" data-o="${o.id}" ${done(o.id) ? 'checked' : ''} ${off.has(o.id) ? 'disabled' : ''} aria-label="${esc(o.text)}"><div class="t">${esc(o.text)}<small>${o.id}${o.flag ? ' · check this fits our school’s teaching' : ''}</small></div><button class="na" data-n="${o.id}">${off.has(o.id) ? 'Teach it' : 'Not taught'}</button></div>`).join('')).join('');
+      main = `<div class="card"><div class="row" style="gap:14px;flex-wrap:wrap;align-items:center"><h3 class="grow" style="margin:0">${esc(sel.name)}</h3>${ys}</div>
+        <div class="pb"><i style="width:${all.pct}%"></i></div><div class="small mute">${all.d} of ${all.n} objectives achieved (${all.pct}%)</div>
+        <div class="tools"><button class="btn pri" id="dls">${svg('dl')} Download ${esc(sel.name)} (.xlsx)</button><button class="btn" id="imp">Import from Claude</button></div>
+        <div class="at">${tabs}</div>${body}</div>`;
+    }
+  }
+  app.innerHTML = `<h2>Curriculum tick-off</h2><p class="mute small" style="margin-top:-6px">NZ Curriculum (refreshed) objectives, Year 5 and 6. Tick when you see a student show it; it saves straight away.</p><div class="cw">${list}<div>${main}</div></div>`;
+  app.querySelectorAll('.sl button').forEach((b) => b.onclick = () => loadStudent(b.dataset.id));
+  app.querySelectorAll('[data-y]').forEach((b) => b.onclick = () => setYear(+b.dataset.y));
+  app.querySelectorAll('[data-a]').forEach((b) => b.onclick = () => { area = b.dataset.a; draw(); });
+  app.querySelectorAll('[data-o]').forEach((b) => b.onchange = () => tick(b.dataset.o, b.checked));
+  app.querySelectorAll('[data-n]').forEach((b) => b.onclick = () => toggleOff(b.dataset.n));
+  $('#dlc') && ($('#dlc').onclick = downloadClass);
+  $('#dls') && ($('#dls').onclick = () => downloadOne());
+  $('#imp') && ($('#imp').onclick = importDialog);
+  if (keep) window.scrollTo(0, sy);
+}
+
+/* ---------- Import from Claude ---------- */
+function promptFor(y) {
+  const lines = N.areas.map((a) => a.name + '\n' + objs(y, a.k).filter((o) => !off.has(o.id)).map((o) => '  ' + o.id + '  ' + o.text).join('\n')).join('\n\n');
+  return `You are helping a New Zealand Year ${y} teacher record curriculum evidence.\nBelow is the student's portfolio package (attached). Look only at what the work actually shows.\nFor each objective in the list that the work clearly demonstrates, give its ID. Do not guess; leave out anything you can't see evidence for.\nReply with one short line of evidence per objective, then a final line exactly like:\nACHIEVED: ID, ID, ID\n\nOBJECTIVES (NZ Curriculum, Year ${y})\n${lines}`;
+}
+function importDialog() {
+  const y = yearOf(sel), m = document.createElement('div'); m.className = 'modal';
+  m.innerHTML = `<div class="sheet wide"><div class="row"><h3 class="grow" style="margin:0">Import from Claude</h3><button class="btn sm" id="x">Close</button></div>
+    <p class="small"><b>1.</b> Copy this prompt into Claude with the student's portfolio package (no names are in it).</p>
+    <button class="btn" id="cp">Copy prompt</button>
+    <p class="small"><b>2.</b> Paste Claude's reply here (the ACHIEVED line is enough).</p>
+    <textarea class="imp" id="ta" placeholder="ACHIEVED: MA.NUM.${y}.1, EN.READ.${y}.2 …"></textarea>
+    <p class="small" id="pv" class="mute"></p>
+    <div class="row"><button class="btn pri" id="go" disabled>Tick these</button></div></div>`;
+  document.body.appendChild(m);
+  const close = () => m.remove(); $('#x', m).onclick = close;
+  $('#cp', m).onclick = async () => { try { await navigator.clipboard.writeText(promptFor(y)); toast('Prompt copied'); } catch (e) { const t = $('#ta', m); t.value = promptFor(y); t.select(); toast('Copy it from the box'); } };
+  let ids = [];
+  $('#ta', m).oninput = (e) => {
+    const found = [...new Set((e.target.value.match(/\b[A-Z]{2}\.[A-Z]+\.[56]\.\d{1,2}\b/g) || []))];
+    ids = found.filter((id) => N.byId[id] && N.byId[id].year === y && !off.has(id));
+    const wrong = found.length - ids.length, already = ids.filter(done).length;
+    $('#pv', m).textContent = found.length ? `${ids.length - already} new to tick (${already} already ticked${wrong ? ', ' + wrong + ' ignored: wrong year or not taught' : ''}).` : '';
+    $('#go', m).disabled = !(ids.length - already);
+  };
+  $('#go', m).onclick = async () => {
+    const ch = {}; ids.filter((id) => !done(id)).forEach((id) => { ch[K(id)] = 2; });
+    try { await saveTicks(ch); Object.assign(checks, ch); toast(Object.keys(ch).length + ' objectives ticked'); close(); draw(); } catch (e) { toast(e.message); }
+  };
+}
+
+/* ---------- Excel ---------- */
+const TICK = '☑', BOX = '☐', NA = 'N/A';
+const safeName = (n, used) => { let b = String(n).replace(/[\[\]:*?\/\\]/g, '').slice(0, 28) || 'Student', s = b, i = 2; while (used.has(s.toLowerCase())) s = b.slice(0, 26) + ' ' + i++; used.add(s.toLowerCase()); return s; };
+function fill(argb) { return { type: 'pattern', pattern: 'solid', fgColor: { argb } }; }
+function studentSheet(wb, name, st, y, ck) {
+  const ws = wb.addWorksheet(name, { views: [{ state: 'frozen', ySplit: 12 }] });
+  ws.columns = [{ width: 8 }, { width: 24 }, { width: 22 }, { width: 80 }, { width: 14 }];
+  ws.mergeCells('A1:E1'); ws.getCell('A1').value = st.name + ' — NZ Curriculum Year ' + y + ' tick-off'; ws.getCell('A1').font = { bold: true, size: 16 };
+  ws.mergeCells('A2:E2'); ws.getCell('A2').value = 'Pick ☑ from the drop-down (or type it) in the first column when you see the objective. N/A = not taught at our school.'; ws.getCell('A2').font = { italic: true, color: { argb: 'FF666666' } };
+  const L = objs(y), first = 13, last = first + L.length - 1, rng = (c) => c + first + ':' + c + last;
+  ws.getRow(4).values = ['', 'Learning area', 'Done', 'Total', '%']; ws.getRow(4).font = { bold: true };
+  ws.getCell('A4').value = ''; 
+  N.areas.forEach((a, i) => {
+    const r = 5 + i, lo = L.filter((o) => o.area === a.k), done_ = lo.filter((o) => done(o.id) && !off.has(o.id)).length, tot = lo.filter((o) => !off.has(o.id)).length;
+    ws.getCell('B' + r).value = a.name;
+    ws.getCell('C' + r).value = { formula: `COUNTIFS(${rng('$B')},B${r},${rng('$A')},"${TICK}")`, result: done_ };
+    ws.getCell('D' + r).value = { formula: `COUNTIFS(${rng('$B')},B${r})-COUNTIFS(${rng('$B')},B${r},${rng('$A')},"${NA}")`, result: tot };
+    ws.getCell('E' + r).value = { formula: `IF(D${r}=0,0,C${r}/D${r})`, result: tot ? done_ / tot : 0 }; ws.getCell('E' + r).numFmt = '0%';
+  });
+  const tr = 5 + N.areas.length, ad = L.filter((o) => done(o.id) && !off.has(o.id)).length, at = L.filter((o) => !off.has(o.id)).length;
+  ws.getCell('B' + tr).value = 'All areas'; ws.getRow(tr).font = { bold: true };
+  ws.getCell('C' + tr).value = { formula: `SUM(C5:C${tr - 1})`, result: ad }; ws.getCell('D' + tr).value = { formula: `SUM(D5:D${tr - 1})`, result: at };
+  ws.getCell('E' + tr).value = { formula: `IF(D${tr}=0,0,C${tr}/D${tr})`, result: at ? ad / at : 0 }; ws.getCell('E' + tr).numFmt = '0%';
+  ws.getRow(12).values = ['Done', 'Learning area', 'Strand', 'I can…', 'ID']; ws.getRow(12).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  ws.getRow(12).eachCell((c) => { c.fill = fill('FF3B3354'); });
+  L.forEach((o, i) => {
+    const r = first + i, row = ws.getRow(r);
+    row.values = [off.has(o.id) ? NA : done(o.id) ? TICK : BOX, o.areaName, o.strandName, o.text, o.id];
+    const c = row.getCell(1); c.alignment = { horizontal: 'center' }; c.font = { size: 16, name: 'Segoe UI Symbol' };
+    c.dataValidation = { type: 'list', allowBlank: false, formulae: [`"${BOX},${TICK},${NA}"`] };
+    row.getCell(4).alignment = { wrapText: true, vertical: 'top' };
+  });
+  ws.addConditionalFormatting({ ref: `A${first}:E${last}`, rules: [
+    { type: 'expression', formulae: [`$A${first}="${TICK}"`], style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'FFD9F2D0' } } } },
+    { type: 'expression', formulae: [`$A${first}="${NA}"`], style: { font: { color: { argb: 'FF999999' } }, fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'FFEEEEEE' } } } } ] });
+  ws.autoFilter = `A12:E${last}`;
+  return { ws, tr, ad, at };
+}
+function save(wb, file) {
+  return wb.xlsx.writeBuffer().then((buf) => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })); a.download = file; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000); });
+}
+const stamp = () => new Date().toISOString().slice(0, 10);
+async function downloadOne() {
+  try { const wb = new ExcelJS.Workbook(); studentSheet(wb, safeName(sel.name, new Set()), sel, yearOf(sel), checks); await save(wb, sel.name.replace(/[^\w ]+/g, '').trim().replace(/ +/g, '_') + '_curriculum_' + stamp() + '.xlsx'); } catch (e) { toast('Could not make the file: ' + e.message); }
+}
+async function downloadClass() {
+  if (busy) return; busy = true; toast('Building the class workbook…');
+  try {
+    const wb = new ExcelJS.Workbook(), used = new Set(['summary']), sm = wb.addWorksheet('Summary'), rows = [];
+    for (const s of students) {
+      const y = yearOf(s); if (!y) { rows.push({ s, y: 0 }); continue; }
+      const r = await call('students/' + s.id + '/progress');
+      const nm = safeName(s.name, used), { tr } = studentSheet(wb, nm, s, y, r.checks || {});
+      rows.push({ s, y, nm, tr, ck: r.checks || {} });
+    }
+    sm.columns = [{ width: 24 }, { width: 8 }].concat(N.areas.map(() => ({ width: 16 }))).concat([{ width: 12 }]);
+    sm.mergeCells(1, 1, 1, 3 + N.areas.length); sm.getCell('A1').value = CFG.className + ' — NZ Curriculum progress (' + stamp() + ')'; sm.getCell('A1').font = { bold: true, size: 16 };
+    const hr = sm.getRow(3); hr.values = ['Student', 'Year'].concat(N.areas.map((a) => a.name)).concat(['All areas']); hr.font = { bold: true, color: { argb: 'FFFFFFFF' } }; hr.eachCell((c) => { c.fill = fill('FF3B3354'); c.alignment = { wrapText: true }; });
+    rows.forEach((o, i) => {
+      const r = 4 + i; sm.getCell('A' + r).value = o.s.name; sm.getCell('B' + r).value = o.y || '—';
+      if (!o.y) { sm.getCell('C' + r).value = 'Set year level on the tick-off page'; return; }
+      const L = objs(o.y);
+      N.areas.forEach((a, j) => {
+        const lo = L.filter((q) => q.area === a.k && !off.has(q.id)), d = lo.filter((q) => o.ck[K(q.id)] === 2).length, c = sm.getCell(r, 3 + j);
+        c.value = { formula: `'${o.nm}'!E${5 + j}`, result: lo.length ? d / lo.length : 0 }; c.numFmt = '0%';
+      });
+      const al = L.filter((q) => !off.has(q.id)), ad = al.filter((q) => o.ck[K(q.id)] === 2).length, c = sm.getCell(r, 3 + N.areas.length);
+      c.value = { formula: `'${o.nm}'!E${o.tr}`, result: al.length ? ad / al.length : 0 }; c.numFmt = '0%'; c.font = { bold: true };
+    });
+    if (rows.length) sm.addConditionalFormatting({ ref: `C4:${String.fromCharCode(66 + N.areas.length + 1)}${3 + rows.length}`, rules: [{ type: 'colorScale', cfvo: [{ type: 'num', value: 0 }, { type: 'num', value: 1 }], color: [{ argb: 'FFFFFFFF' }, { argb: 'FF8FD18A' }] }] });
+    sm.views = [{ state: 'frozen', ySplit: 3, xSplit: 1 }];
+    await save(wb, CFG.className.replace(/[^\w ]+/g, '').trim().replace(/ +/g, '_') + '_curriculum_class_' + stamp() + '.xlsx'); toast('Class workbook downloaded');
+  } catch (e) { toast('Could not make the file: ' + e.message); } finally { busy = false; }
+}
+
+(async () => {
+  try {
+    const [s, o] = await Promise.all([call('students'), call('nzc/off').catch(() => ({ off: [] }))]);
+    students = s.students; off = new Set(o.off || []); draw();
+  } catch (e) { app.innerHTML = '<div class="empty"><p>' + esc(e.message) + '</p></div>'; }
+})();
+</script>
+</body>
+</html>

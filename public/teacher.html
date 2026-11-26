@@ -23,7 +23,7 @@
 <header class="top"><div class="in">
   <a class="brand" href="#/"><span class="logo" id="logo"></span><span><b id="bn"></b><small id="bs"></small></span></a>
   <nav class="nav" aria-label="Main">
-    <a href="#/" data-r="home" id="n1"></a><a href="#/progress" data-r="progress" id="n5"></a><a href="#/roster" data-r="roster" id="n2"></a><a href="#/files" data-r="files" id="n7"></a><a href="#/calendar" data-r="calendar" id="n8"></a><a href="#/print" data-r="print" id="n3"></a><a href="#/apps" data-r="apps" id="n4"></a><a href="#/class" data-r="class" id="n6"></a><a href="/behaviour.html" id="n11"></a><a href="/verse.html" id="n12"></a>
+    <a href="#/" data-r="home" id="n1"></a><a href="#/progress" data-r="progress" id="n5"></a><a href="#/roster" data-r="roster" id="n2"></a><a href="#/files" data-r="files" id="n7"></a><a href="#/calendar" data-r="calendar" id="n8"></a><a href="#/print" data-r="print" id="n3"></a><a href="#/apps" data-r="apps" id="n4"></a><a href="#/class" data-r="class" id="n6"></a><a href="/behaviour.html" id="n11"></a><a href="/verse.html" id="n12"></a><a href="/curriculum.html" id="n13"></a>
     <button id="nadd" type="button" class="btn pri sm" style="margin-right:6px">📷 Add photo</button>
     <button id="out"></button>
   </nav>
@@ -43,7 +43,7 @@ $('#logo').innerHTML = svg('logo');
 $('#bn').textContent = CFG.className + ' Portfolio';
 $('#bs').textContent = 'Teacher hub';
 document.title = CFG.className + ' · Teacher hub';
-$('#n1').innerHTML = svg('home') + 'Class'; $('#n5').innerHTML = svg('result') + 'Progress'; $('#n2').innerHTML = svg('users') + 'Roster'; $('#n7').innerHTML = svg('cloud') + 'Manage files'; $('#n8').innerHTML = svg('cal') + 'Calendar'; $('#n3').innerHTML = svg('qr') + 'Print'; $('#n4').innerHTML = svg('plug') + 'Connect apps'; $('#n6').innerHTML = svg('key') + 'Close class'; $('#n11').innerHTML = svg('result') + 'Behaviour'; $('#n12').innerHTML = svg('result') + 'Memory verse';
+$('#n1').innerHTML = svg('home') + 'Class'; $('#n5').innerHTML = svg('result') + 'Progress'; $('#n2').innerHTML = svg('users') + 'Roster'; $('#n7').innerHTML = svg('cloud') + 'Manage files'; $('#n8').innerHTML = svg('cal') + 'Calendar'; $('#n3').innerHTML = svg('qr') + 'Print'; $('#n4').innerHTML = svg('plug') + 'Connect apps'; $('#n6').innerHTML = svg('key') + 'Close class'; $('#n11').innerHTML = svg('result') + 'Behaviour'; $('#n12').innerHTML = svg('result') + 'Memory verse'; $('#n13').innerHTML = svg('result') + 'Curriculum';
 $('#out').innerHTML = svg('out') + 'Sign out';
 $('#out').onclick = () => { store.del('cp_t'); location.href = '/'; };
 $('#nadd').onclick = async () => { try { await loadStudents(); } catch (e) {} CP.addWork({ who: 'teacher', token, students, onDone: () => route() }); };
