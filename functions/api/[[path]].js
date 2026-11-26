@@ -551,6 +551,20 @@ export async function onRequest({ request, env }) {
       await setSetting(db, 'mv_at', vn ? Date.now() : 0);
       return json({ n: vn, at: vn ? Date.now() : 0 });
     }
+    if (a === 'nzc' && b === 'off') {
+      if (!teacher) return fail(403, 'Teacher only');
+      if (m === 'GET') {
+        const r = await db.prepare("SELECT v FROM settings WHERE k='nzc_off'").first();
+        let ids = []; try { ids = JSON.parse((r && r.v) || '[]'); } catch (e) {}
+        return json({ off: Array.isArray(ids) ? ids : [] });
+      }
+      if (m === 'PUT') {
+        const p = await request.json().catch(() => ({}));
+        const ids = (Array.isArray(p.off) ? p.off : []).filter((x) => typeof x === 'string' && /^[A-Z]{2}\.[A-Z]+\.[56]\.\d{1,2}$/.test(x)).slice(0, 400);
+        await setSetting(db, 'nzc_off', JSON.stringify(ids));
+        return json({ off: ids });
+      }
+    }
     if (a === 'notice' && m === 'PUT') {
       if (!teacher) return fail(403, 'Teacher only');
       const p = await request.json().catch(() => ({}));
