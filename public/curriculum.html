@@ -158,38 +158,81 @@ function importDialog() {
 const TICK = '☑', BOX = '☐', NA = 'N/A';
 const safeName = (n, used) => { let b = String(n).replace(/[\[\]:*?\/\\]/g, '').slice(0, 28) || 'Student', s = b, i = 2; while (used.has(s.toLowerCase())) s = b.slice(0, 26) + ' ' + i++; used.add(s.toLowerCase()); return s; };
 function fill(argb) { return { type: 'pattern', pattern: 'solid', fgColor: { argb } }; }
-function studentSheet(wb, name, st, y, ck) {
-  const ws = wb.addWorksheet(name, { views: [{ state: 'frozen', ySplit: 12 }] });
-  ws.columns = [{ width: 8 }, { width: 24 }, { width: 22 }, { width: 80 }, { width: 14 }];
-  ws.mergeCells('A1:E1'); ws.getCell('A1').value = st.name + ' — NZ Curriculum Year ' + y + ' tick-off'; ws.getCell('A1').font = { bold: true, size: 16 };
-  ws.mergeCells('A2:E2'); ws.getCell('A2').value = 'Pick ☑ from the drop-down (or type it) in the first column when you see the objective. N/A = not taught at our school.'; ws.getCell('A2').font = { italic: true, color: { argb: 'FF666666' } };
-  const L = objs(y), first = 13, last = first + L.length - 1, rng = (c) => c + first + ':' + c + last;
-  ws.getRow(4).values = ['', 'Learning area', 'Done', 'Total', '%']; ws.getRow(4).font = { bold: true };
-  ws.getCell('A4').value = ''; 
+const argb = (hex) => 'FF' + hex.toUpperCase();
+const tint = (hex, f) => { const c = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16)); return 'FF' + c.map((v) => Math.round(v + (255 - v) * f).toString(16).padStart(2, '0')).join('').toUpperCase(); };
+const thin = { style: 'thin', color: { argb: 'FFD9D2BE' } }, box = { top: thin, left: thin, bottom: thin, right: thin };
+const INK = 'FF2E2A47', CREAM = 'FFFFF8E7';
+// Optional pictures (made with ChatGPT, saved in /assets/art/): xl-banner.png, xl-mascot.png, xl-area-MA.png … If missing, the sheet still looks good.
+const imgCache = {};
+async function loadImgs(wb) {
+  const names = ['banner', 'mascot'].concat(N.areas.map((a) => 'area-' + a.k)), out = {};
+  await Promise.all(names.map(async (n) => {
+    if (!(n in imgCache)) {
+      imgCache[n] = null;
+      try { const r = await fetch('/assets/art/xl-' + n + '.png'); if (r.ok && /image/.test(r.headers.get('content-type') || '')) { const b = await r.arrayBuffer(); imgCache[n] = b; } } catch (e) {}
+    }
+    if (imgCache[n]) out[n] = wb.addImage({ buffer: imgCache[n], extension: 'png' });
+  }));
+  return out;
+}
+function studentSheet(wb, name, st, y, ck, imgs) {
+  imgs = imgs || {};
+  const yc = y === 5 ? 'F4A261' : '4F7BE0';
+  const ws = wb.addWorksheet(name, { views: [{ state: 'frozen', ySplit: 14, showGridLines: false }], properties: { tabColor: { argb: argb(yc) } },
+    pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 } });
+  ws.columns = [{ width: 9 }, { width: 31 }, { width: 24 }, { width: 84 }, { width: 14 }];
+  // banner
+  ws.getRow(1).height = imgs.banner != null ? 142 : 62;
+  ws.mergeCells('A1:E1'); ws.getCell('A1').fill = fill(INK);
+  if (imgs.banner != null) ws.addImage(imgs.banner, { tl: { col: 0, row: 0 }, ext: { width: 1180, height: 190 } });
+  else { ws.getCell('A1').value = '  ' + CFG.className + ' · NZ Curriculum'; ws.getCell('A1').font = { bold: true, size: 20, color: { argb: 'FFFFFFFF' } }; ws.getCell('A1').alignment = { vertical: 'middle' }; }
+  if (imgs.mascot != null) ws.addImage(imgs.mascot, { tl: { col: 4.1, row: 1 }, ext: { width: 84, height: 84 } });
+  ws.getRow(2).height = 34; ws.mergeCells('A2:D2');
+  ws.getCell('A2').value = st.name; ws.getCell('A2').font = { bold: true, size: 24, color: { argb: INK } }; ws.getCell('A2').alignment = { vertical: 'middle', indent: 1 };
+  ws.getRow(3).height = 22; ws.mergeCells('A3:D3');
+  ws.getCell('A3').value = 'Year ' + y + ' · NZ Curriculum (refreshed) · updated ' + new Date().toLocaleDateString('en-NZ', { day: 'numeric', month: 'long', year: 'numeric' });
+  ws.getCell('A3').font = { size: 12, color: { argb: 'FF6B6585' } }; ws.getCell('A3').alignment = { indent: 1 };
+  ws.mergeCells('A4:D4'); ws.getCell('A4').value = 'How to use: click a box in the first column and choose ☑ when you see the learning. N/A means not taught at our school.';
+  ws.getCell('A4').font = { italic: true, size: 10, color: { argb: 'FF8A8470' } }; ws.getCell('A4').alignment = { indent: 1 };
+  const L = objs(y), first = 15, last = first + L.length - 1, rng = (c) => c + first + ':' + c + last;
+  // summary table
+  ws.getRow(5).height = 24;
+  ['', 'Learning area', 'Achieved', 'Out of', 'Progress'].forEach((t, i) => { const c = ws.getCell(5, i + 1); c.value = t; c.font = { bold: true, color: { argb: 'FFFFFFFF' } }; c.fill = fill(INK); c.alignment = { vertical: 'middle', horizontal: i > 1 ? 'center' : 'left', indent: i === 1 ? 1 : 0 }; });
   N.areas.forEach((a, i) => {
-    const r = 5 + i, lo = L.filter((o) => o.area === a.k), done_ = lo.filter((o) => done(o.id) && !off.has(o.id)).length, tot = lo.filter((o) => !off.has(o.id)).length;
-    ws.getCell('B' + r).value = a.name;
-    ws.getCell('C' + r).value = { formula: `COUNTIFS(${rng('$B')},B${r},${rng('$A')},"${TICK}")`, result: done_ };
+    const r = 6 + i, lo = L.filter((o) => o.area === a.k), d = lo.filter((o) => done(o.id) && !off.has(o.id)).length, tot = lo.filter((o) => !off.has(o.id)).length;
+    ws.getRow(r).height = 26;
+    for (let c = 1; c <= 5; c++) { const q = ws.getCell(r, c); q.fill = fill(tint(a.colour, 0.82)); q.border = box; q.alignment = { vertical: 'middle', horizontal: c > 2 ? 'center' : 'left', indent: c === 2 ? 1 : 0 }; }
+    ws.getCell('B' + r).value = a.name; ws.getCell('B' + r).font = { bold: true, color: { argb: INK }, size: 12 };
+    ws.getCell('C' + r).value = { formula: `COUNTIFS(${rng('$B')},B${r},${rng('$A')},"${TICK}")`, result: d };
     ws.getCell('D' + r).value = { formula: `COUNTIFS(${rng('$B')},B${r})-COUNTIFS(${rng('$B')},B${r},${rng('$A')},"${NA}")`, result: tot };
-    ws.getCell('E' + r).value = { formula: `IF(D${r}=0,0,C${r}/D${r})`, result: tot ? done_ / tot : 0 }; ws.getCell('E' + r).numFmt = '0%';
+    ws.getCell('E' + r).value = { formula: `IF(D${r}=0,0,C${r}/D${r})`, result: tot ? d / tot : 0 }; ws.getCell('E' + r).numFmt = '0%'; ws.getCell('E' + r).font = { bold: true, size: 12 };
+    if (imgs['area-' + a.k] != null) ws.addImage(imgs['area-' + a.k], { tl: { col: 0.12, row: r - 1 + 0.1 }, ext: { width: 30, height: 30 } });
+    ws.addConditionalFormatting({ ref: 'E' + r, rules: [{ type: 'dataBar', cfvo: [{ type: 'num', value: 0 }, { type: 'num', value: 1 }], color: { argb: argb(a.colour) }, gradient: false }] });
   });
-  const tr = 5 + N.areas.length, ad = L.filter((o) => done(o.id) && !off.has(o.id)).length, at = L.filter((o) => !off.has(o.id)).length;
-  ws.getCell('B' + tr).value = 'All areas'; ws.getRow(tr).font = { bold: true };
-  ws.getCell('C' + tr).value = { formula: `SUM(C5:C${tr - 1})`, result: ad }; ws.getCell('D' + tr).value = { formula: `SUM(D5:D${tr - 1})`, result: at };
+  const tr = 6 + N.areas.length, ad = L.filter((o) => done(o.id) && !off.has(o.id)).length, at = L.filter((o) => !off.has(o.id)).length;
+  ws.getRow(tr).height = 28;
+  for (let c = 1; c <= 5; c++) { const q = ws.getCell(tr, c); q.fill = fill(INK); q.font = { bold: true, size: 13, color: { argb: 'FFFFFFFF' } }; q.alignment = { vertical: 'middle', horizontal: c > 2 ? 'center' : 'left', indent: c === 2 ? 1 : 0 }; }
+  ws.getCell('B' + tr).value = 'All areas';
+  ws.getCell('C' + tr).value = { formula: `SUM(C6:C${tr - 1})`, result: ad }; ws.getCell('D' + tr).value = { formula: `SUM(D6:D${tr - 1})`, result: at };
   ws.getCell('E' + tr).value = { formula: `IF(D${tr}=0,0,C${tr}/D${tr})`, result: at ? ad / at : 0 }; ws.getCell('E' + tr).numFmt = '0%';
-  ws.getRow(12).values = ['Done', 'Learning area', 'Strand', 'I can…', 'ID']; ws.getRow(12).font = { bold: true, color: { argb: 'FFFFFFFF' } };
-  ws.getRow(12).eachCell((c) => { c.fill = fill('FF3B3354'); });
+  // objectives
+  ws.getRow(14).height = 26;
+  ['Done', 'Learning area', 'Strand', 'I can…', 'ID'].forEach((t, i) => { const c = ws.getCell(14, i + 1); c.value = t; c.font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } }; c.fill = fill('FF5B5280'); c.alignment = { vertical: 'middle', horizontal: i === 0 || i === 4 ? 'center' : 'left', indent: i === 3 ? 1 : 0 }; });
   L.forEach((o, i) => {
-    const r = first + i, row = ws.getRow(r);
+    const r = first + i, row = ws.getRow(r), col = (N.areas.find((a) => a.k === o.area) || {}).colour || '999999';
     row.values = [off.has(o.id) ? NA : done(o.id) ? TICK : BOX, o.areaName, o.strandName, o.text, o.id];
-    const c = row.getCell(1); c.alignment = { horizontal: 'center' }; c.font = { size: 16, name: 'Segoe UI Symbol' };
-    c.dataValidation = { type: 'list', allowBlank: false, formulae: [`"${BOX},${TICK},${NA}"`] };
-    row.getCell(4).alignment = { wrapText: true, vertical: 'top' };
+    row.height = o.text.length > 80 ? 34 : 24;
+    for (let c = 1; c <= 5; c++) { const q = row.getCell(c); q.border = box; q.alignment = { vertical: 'middle', wrapText: c === 4, horizontal: c === 1 || c === 5 ? 'center' : 'left', indent: c === 4 ? 1 : 0 }; q.fill = fill(c === 2 ? tint(col, 0.8) : c === 3 ? tint(col, 0.9) : 'FFFFFDF6'); }
+    row.getCell(1).font = { size: 18, name: 'Segoe UI Symbol', color: { argb: INK } };
+    row.getCell(2).font = { bold: true, size: 10, color: { argb: INK } }; row.getCell(3).font = { size: 10, color: { argb: 'FF5E5878' } };
+    row.getCell(4).font = { size: 11, color: { argb: INK } }; row.getCell(5).font = { size: 9, color: { argb: 'FF9A94AE' } };
+    row.getCell(1).dataValidation = { type: 'list', allowBlank: false, formulae: [`"${BOX},${TICK},${NA}"`], showErrorMessage: true, errorTitle: 'Pick from the list', error: 'Choose ☐, ☑ or N/A' };
   });
   ws.addConditionalFormatting({ ref: `A${first}:E${last}`, rules: [
-    { type: 'expression', formulae: [`$A${first}="${TICK}"`], style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'FFD9F2D0' } } } },
-    { type: 'expression', formulae: [`$A${first}="${NA}"`], style: { font: { color: { argb: 'FF999999' } }, fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'FFEEEEEE' } } } } ] });
-  ws.autoFilter = `A12:E${last}`;
+    { type: 'expression', priority: 1, formulae: [`$A${first}="${TICK}"`], style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'FFCFEFC4' } }, font: { color: { argb: 'FF1F5E1B' } } } },
+    { type: 'expression', priority: 2, formulae: [`$A${first}="${NA}"`], style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'FFE6E4EC' } }, font: { color: { argb: 'FF9A94AE' }, strike: true } } } ] });
+  ws.autoFilter = `A14:E${last}`;
+  ws.pageSetup.printTitlesRow = '14:14';
   return { ws, tr, ad, at };
 }
 function save(wb, file) {
@@ -197,32 +240,36 @@ function save(wb, file) {
 }
 const stamp = () => new Date().toISOString().slice(0, 10);
 async function downloadOne() {
-  try { const wb = new ExcelJS.Workbook(); studentSheet(wb, safeName(sel.name, new Set()), sel, yearOf(sel), checks); await save(wb, sel.name.replace(/[^\w ]+/g, '').trim().replace(/ +/g, '_') + '_curriculum_' + stamp() + '.xlsx'); } catch (e) { toast('Could not make the file: ' + e.message); }
+  try { const wb = new ExcelJS.Workbook(); studentSheet(wb, safeName(sel.name, new Set()), sel, yearOf(sel), checks, await loadImgs(wb)); await save(wb, sel.name.replace(/[^\w ]+/g, '').trim().replace(/ +/g, '_') + '_curriculum_' + stamp() + '.xlsx'); } catch (e) { toast('Could not make the file: ' + e.message); }
 }
 async function downloadClass() {
   if (busy) return; busy = true; toast('Building the class workbook…');
   try {
-    const wb = new ExcelJS.Workbook(), used = new Set(['summary']), sm = wb.addWorksheet('Summary'), rows = [];
+    const wb = new ExcelJS.Workbook(), used = new Set(['summary']), sm = wb.addWorksheet('Summary', { views: [{ showGridLines: false }] }), rows = [], imgs = await loadImgs(wb);
     for (const s of students) {
       const y = yearOf(s); if (!y) { rows.push({ s, y: 0 }); continue; }
       const r = await call('students/' + s.id + '/progress');
-      const nm = safeName(s.name, used), { tr } = studentSheet(wb, nm, s, y, r.checks || {});
+      const nm = safeName(s.name, used), { tr } = studentSheet(wb, nm, s, y, r.checks || {}, imgs);
       rows.push({ s, y, nm, tr, ck: r.checks || {} });
     }
     sm.columns = [{ width: 24 }, { width: 8 }].concat(N.areas.map(() => ({ width: 16 }))).concat([{ width: 12 }]);
-    sm.mergeCells(1, 1, 1, 3 + N.areas.length); sm.getCell('A1').value = CFG.className + ' — NZ Curriculum progress (' + stamp() + ')'; sm.getCell('A1').font = { bold: true, size: 16 };
+    const nc = 3 + N.areas.length; sm.mergeCells(1, 1, 1, nc); sm.getRow(1).height = imgs.banner != null ? 134 : 62; sm.getCell('A1').fill = fill(INK);
+    if (imgs.banner != null) sm.addImage(imgs.banner, { tl: { col: 0, row: 0 }, ext: { width: 1100, height: 177 } }); else { sm.getCell('A1').value = '  ' + CFG.className + ' · NZ Curriculum progress'; sm.getCell('A1').font = { bold: true, size: 20, color: { argb: 'FFFFFFFF' } }; sm.getCell('A1').alignment = { vertical: 'middle' }; }
+    sm.mergeCells(2, 1, 2, nc); sm.getCell('A2').value = 'Whole class · ' + new Date().toLocaleDateString('en-NZ', { day: 'numeric', month: 'long', year: 'numeric' }) + ' · each student has their own tab'; sm.getCell('A2').font = { italic: true, color: { argb: 'FF6B6585' } }; sm.getRow(2).height = 24; sm.getCell('A2').alignment = { vertical: 'middle', indent: 1 };
     const hr = sm.getRow(3); hr.values = ['Student', 'Year'].concat(N.areas.map((a) => a.name)).concat(['All areas']); hr.font = { bold: true, color: { argb: 'FFFFFFFF' } }; hr.eachCell((c) => { c.fill = fill('FF3B3354'); c.alignment = { wrapText: true }; });
+    hr.height = 40; hr.eachCell((c, n) => { c.fill = fill(n >= 3 && n <= 2 + N.areas.length ? argb(N.areas[n - 3].colour) : INK); c.alignment = { wrapText: true, vertical: 'middle', horizontal: n > 1 ? 'center' : 'left', indent: n === 1 ? 1 : 0 }; });
     rows.forEach((o, i) => {
       const r = 4 + i; sm.getCell('A' + r).value = o.s.name; sm.getCell('B' + r).value = o.y || '—';
       if (!o.y) { sm.getCell('C' + r).value = 'Set year level on the tick-off page'; return; }
       const L = objs(o.y);
       N.areas.forEach((a, j) => {
         const lo = L.filter((q) => q.area === a.k && !off.has(q.id)), d = lo.filter((q) => o.ck[K(q.id)] === 2).length, c = sm.getCell(r, 3 + j);
-        c.value = { formula: `'${o.nm}'!E${5 + j}`, result: lo.length ? d / lo.length : 0 }; c.numFmt = '0%';
+        c.value = { formula: `'${o.nm}'!E${6 + j}`, result: lo.length ? d / lo.length : 0 }; c.numFmt = '0%';
       });
       const al = L.filter((q) => !off.has(q.id)), ad = al.filter((q) => o.ck[K(q.id)] === 2).length, c = sm.getCell(r, 3 + N.areas.length);
       c.value = { formula: `'${o.nm}'!E${o.tr}`, result: al.length ? ad / al.length : 0 }; c.numFmt = '0%'; c.font = { bold: true };
     });
+    rows.forEach((o, i) => { const r = 4 + i; sm.getRow(r).height = 24; for (let c = 1; c <= nc; c++) { const q = sm.getCell(r, c); q.border = box; q.alignment = { vertical: 'middle', horizontal: c > 1 ? 'center' : 'left', indent: c === 1 ? 1 : 0 }; if (c === 1) q.font = { bold: true, color: { argb: INK } }; } });
     if (rows.length) sm.addConditionalFormatting({ ref: `C4:${String.fromCharCode(66 + N.areas.length + 1)}${3 + rows.length}`, rules: [{ type: 'colorScale', cfvo: [{ type: 'num', value: 0 }, { type: 'num', value: 1 }], color: [{ argb: 'FFFFFFFF' }, { argb: 'FF8FD18A' }] }] });
     sm.views = [{ state: 'frozen', ySplit: 3, xSplit: 1 }];
     await save(wb, CFG.className.replace(/[^\w ]+/g, '').trim().replace(/ +/g, '_') + '_curriculum_class_' + stamp() + '.xlsx'); toast('Class workbook downloaded');
